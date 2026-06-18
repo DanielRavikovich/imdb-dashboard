@@ -1,0 +1,1793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IMDB Cinema Dashboard - 1931–2024</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel2: #1c2230;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #f5c518;
+  --accent2: #c9a000;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+       background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* HEADER */
+header {
+  background: linear-gradient(135deg, #111827 0%, #1a2340 100%);
+  border-bottom: 2px solid var(--accent);
+  padding: 20px 32px 0;
+}
+.header-top { display: flex; align-items: center; gap: 18px; margin-bottom: 6px; }
+.imdb-badge {
+  background: var(--accent); color: #000; font-weight: 900;
+  font-size: 18px; padding: 4px 9px; border-radius: 4px; letter-spacing: -0.5px;
+}
+header h1 { font-size: 22px; font-weight: 700; color: var(--text); }
+header p { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+/* TABS */
+.tabs { display: flex; gap: 0; }
+.tab-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 14px; font-weight: 600; padding: 10px 22px;
+  border-bottom: 3px solid transparent; transition: all .2s;
+}
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+
+/* MAIN LAYOUT */
+main { padding: 20px 24px; }
+.dashboard { display: none; }
+.dashboard.active { display: block; }
+
+/* GENRE FILTER */
+.genre-filter {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; align-items: center;
+}
+.genre-filter label { font-size: 12px; color: var(--muted); font-weight: 600; margin-right: 4px; }
+.genre-chip {
+  padding: 5px 13px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 2px solid; transition: all .2s; user-select: none;
+}
+.genre-chip.on { opacity: 1; }
+.genre-chip.off { opacity: 0.28; }
+.clear-btn {
+  padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; background: var(--panel); border: 2px solid var(--border);
+  color: var(--muted); transition: all .2s; margin-left: 6px;
+}
+.clear-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* CHART GRIDS */
+.grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-scatter { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+
+/* PANELS */
+.panel {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px;
+}
+.panel h2 {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+}
+.panel h2 .subtitle {
+  font-size: 12px; font-weight: 400; color: var(--muted);
+}
+.panel-hint {
+  font-size: 11px; color: var(--muted); margin-bottom: 12px;
+}
+
+/* LEGEND */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--muted); cursor: pointer;
+}
+.legend-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+
+/* SVG DEFAULTS */
+svg { display: block; overflow: visible; }
+.axis path, .axis line { stroke: var(--border); }
+.axis text { fill: var(--muted); font-size: 11px; }
+.axis-label { fill: var(--muted); font-size: 11px; }
+.grid-line { stroke: var(--border); stroke-opacity: 0.5; stroke-dasharray: 3,3; }
+.chart-title { fill: var(--muted); font-size: 11px; }
+
+/* TOOLTIP */
+#tooltip {
+  position: fixed; pointer-events: none; z-index: 999;
+  background: #0d1117ee; border: 1px solid var(--accent);
+  border-radius: 8px; padding: 12px 16px; min-width: 200px; max-width: 280px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+  opacity: 0; transition: opacity .15s;
+}
+#tooltip .tt-title { font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+#tooltip .tt-row { font-size: 12px; color: var(--muted); margin-top: 3px; }
+#tooltip .tt-row span { color: var(--text); font-weight: 600; }
+#tooltip .tt-rating { font-size: 20px; font-weight: 900; color: var(--accent); }
+#tooltip .tt-stars { color: var(--accent); font-size: 13px; }
+
+/* DETAIL PANEL */
+#movie-detail {
+  font-size: 13px; color: var(--muted);
+  min-height: 160px; display: flex; align-items: center; justify-content: center;
+}
+.movie-card { width: 100%; }
+.mc-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.mc-year { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.mc-rating { font-size: 32px; font-weight: 900; color: var(--accent); line-height: 1; }
+.mc-rating-label { font-size: 11px; color: var(--muted); }
+.mc-stats { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mc-stat-box { background: var(--panel2); border-radius: 6px; padding: 8px 10px; }
+.mc-stat-val { font-size: 15px; font-weight: 700; color: var(--text); }
+.mc-stat-key { font-size: 10px; color: var(--muted); }
+.mc-genre-tag {
+  display: inline-block; margin-top: 10px; padding: 4px 12px;
+  border-radius: 12px; font-size: 11px; font-weight: 700;
+}
+
+
+/* DECADE INSTRUCTION */
+.decade-hint {
+  font-size: 11px; color: var(--muted); text-align: center; margin-top: 4px;
+}
+
+/* SELECTED INDICATOR */
+.selected-decade-label {
+  font-size: 12px; color: var(--accent); font-weight: 600;
+  margin-left: 8px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <div class="imdb-badge">IMDb</div>
+    <h1>Cinema Dashboard - 1931–2024</h1>
+  </div>
+  <p>Exploring quality, popularity, and genre evolution across cinematic history (1941–2023)</p>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="trends">📈 Cinematic Trends</button>
+    <button class="tab-btn" data-tab="explorer">🔭 Film Explorer</button>
+  </div>
+</header>
+
+<main>
+  <!-- SHARED GENRE FILTER -->
+  <div class="genre-filter" id="genreFilter">
+    <label>GENRE:</label>
+    <!-- chips injected by JS -->
+    <button class="clear-btn" id="clearGenres">Show All</button>
+  </div>
+
+  <!-- DASHBOARD 1: TRENDS -->
+  <section class="dashboard active" id="dash-trends">
+    <div class="grid-2col">
+      <!-- Timeline -->
+      <div class="panel">
+        <h2>Rating & Volume by Decade
+          <span class="subtitle">— click a bar to filter</span>
+        </h2>
+        <p class="panel-hint">Top: film count per decade · Bottom: average IMDb rating trend</p>
+        <svg id="timeline-count-svg"></svg>
+        <svg id="timeline-rating-svg" style="margin-top:4px"></svg>
+        <p class="decade-hint" id="decadeHint">Click a decade to see its top films →</p>
+      </div>
+      <!-- Top Movies -->
+      <div class="panel">
+        <h2>Top Rated Films
+          <span class="selected-decade-label" id="decadeLabel">All Time</span>
+        </h2>
+        <p class="panel-hint">Sorted by IMDb rating · Colored by genre</p>
+        <svg id="topbar-svg"></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD 2: EXPLORER -->
+  <section class="dashboard" id="dash-explorer">
+    <div class="grid-scatter">
+      <!-- Scatter -->
+      <div class="panel">
+        <h2>Rating × Audience Size
+          <span class="subtitle">— drag to select films</span>
+        </h2>
+        <p class="panel-hint">X = IMDb Rating · Y = Vote count (log) · Size = Runtime · Color = Genre</p>
+        <svg id="scatter-svg"></svg>
+      </div>
+      <!-- Side panels -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="panel">
+          <h2>Film Detail</h2>
+          <div id="movie-detail">Hover a bubble to see details</div>
+        </div>
+        <div class="panel">
+          <h2>Genre Breakdown
+            <span class="subtitle" id="selCount"></span>
+          </h2>
+          <p class="panel-hint">Distribution in current selection</p>
+          <svg id="genre-svg"></svg>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Shared legend -->
+<div style="padding: 8px 24px 20px;">
+  <div class="legend" id="sharedLegend"></div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// DATA  [title, year, genre, rating, votes_M, runtime]
+// Source: https://datasets.imdbws.com/ (title.ratings.tsv.gz + title.basics.tsv.gz)
+// ═══════════════════════════════════════════
+const RAW = [
+['The Shawshank Redemption',1994,'Drama',9.3,3.197,142],
+['The Dark Knight',2008,'Crime',9.1,3.178,152],
+['Inception',2010,'Sci-Fi',8.8,2.826,148],
+['Fight Club',1999,'Crime',8.8,2.618,139],
+['Interstellar',2014,'Sci-Fi',8.7,2.544,169],
+['Forrest Gump',1994,'Drama',8.8,2.503,142],
+['Pulp Fiction',1994,'Crime',8.8,2.441,154],
+['The Godfather',1972,'Crime',9.2,2.231,175],
+['The Lord of the Rings: The Fellowship of the Ring',2001,'Drama',8.9,2.212,178],
+['The Matrix',1999,'Sci-Fi',8.7,2.254,136],
+['The Lord of the Rings: The Return of the King',2003,'Drama',9.0,2.169,201],
+['Seven',1995,'Crime',8.6,2.028,127],
+['The Lord of the Rings: The Two Towers',2002,'Drama',8.8,1.962,179],
+['The Dark Knight Rises',2012,'Crime',8.4,2.001,164],
+['Django Unchained',2012,'Drama',8.5,1.889,165],
+['Gladiator',2000,'Drama',8.5,1.855,155],
+['Inglourious Basterds',2009,'Drama',8.4,1.791,153],
+['The Silence of the Lambs',1991,'Crime',8.6,1.728,118],
+['The Wolf of Wall Street',2013,'Crime',8.2,1.796,180],
+['Schindler\'s List',1993,'Drama',9.0,1.588,195],
+['Saving Private Ryan',1998,'Drama',8.6,1.644,169],
+['Joker',2019,'Drama',8.3,1.7,122],
+['Batman Begins',2005,'Crime',8.2,1.72,140],
+['Shutter Island',2010,'Thriller',8.2,1.655,138],
+['The Prestige',2006,'Sci-Fi',8.5,1.594,130],
+['Star Wars: Episode IV - A New Hope',1977,'Sci-Fi',8.6,1.574,121],
+['The Godfather Part II',1974,'Crime',9.0,1.497,202],
+['The Green Mile',1999,'Crime',8.6,1.565,189],
+['The Departed',2006,'Crime',8.5,1.559,151],
+['Star Wars: Episode V - The Empire Strikes Back',1980,'Sci-Fi',8.7,1.508,124],
+['The Avengers',2012,'Sci-Fi',8.0,1.562,143],
+['Back to the Future',1985,'Sci-Fi',8.5,1.457,116],
+['Avengers: Endgame',2019,'Sci-Fi',8.4,1.453,181],
+['GoodFellas',1990,'Crime',8.7,1.396,145],
+['Memento',2000,'Thriller',8.4,1.438,113],
+['Avatar',2009,'Action',7.9,1.502,162],
+['Avengers: Infinity War',2018,'Sci-Fi',8.4,1.378,149],
+['Léon: The Professional',1994,'Crime',8.5,1.354,110],
+['The Truman Show',1998,'Comedy',8.2,1.38,103],
+['Titanic',1997,'Drama',8.0,1.397,194],
+['WALL·E',2008,'Animation',8.4,1.325,98],
+['Terminator 2: Judgment Day',1991,'Sci-Fi',8.6,1.286,137],
+['Guardians of the Galaxy',2014,'Comedy',8.0,1.367,121],
+['American History X',1998,'Crime',8.5,1.276,119],
+['Pirates of the Caribbean: The Curse of the Black Pearl',2003,'Action',8.1,1.329,143],
+['Kill Bill: Vol. 1',2003,'Crime',8.2,1.311,111],
+['The Lion King',1994,'Animation',8.5,1.263,88],
+['American Beauty',1999,'Drama',8.3,1.281,122],
+['The Usual Suspects',1995,'Crime',8.5,1.241,106],
+['The Shining',1980,'Thriller',8.4,1.229,146],
+['Up',2009,'Animation',8.3,1.24,96],
+['Good Will Hunting',1997,'Drama',8.4,1.222,126],
+['V for Vendetta',2005,'Sci-Fi',8.1,1.248,132],
+['Catch Me If You Can',2002,'Crime',8.1,1.245,141],
+['Star Wars: Episode VI - Return of the Jedi',1983,'Sci-Fi',8.3,1.212,131],
+['Deadpool',2016,'Sci-Fi',8.0,1.257,108],
+['One Flew Over the Cuckoo\'s Nest',1975,'Drama',8.6,1.158,133],
+['Parasite',2019,'Thriller',8.5,1.171,132],
+['Finding Nemo',2003,'Animation',8.2,1.211,100],
+['Whiplash',2014,'Drama',8.5,1.161,106],
+['Eternal Sunshine of the Spotless Mind',2004,'Sci-Fi',8.3,1.185,108],
+['No Country for Old Men',2007,'Crime',8.2,1.195,122],
+['Mad Max: Fury Road',2015,'Sci-Fi',8.1,1.209,120],
+['Toy Story',1995,'Animation',8.3,1.178,81],
+['Reservoir Dogs',1992,'Crime',8.3,1.172,99],
+['Iron Man',2008,'Sci-Fi',7.9,1.228,126],
+['Jurassic Park',1993,'Sci-Fi',8.2,1.182,127],
+['Braveheart',1995,'Drama',8.3,1.163,178],
+['Gone Girl',2014,'Thriller',8.1,1.173,149],
+['The Sixth Sense',1999,'Thriller',8.2,1.147,107],
+['Raiders of the Lost Ark',1981,'Action',8.4,1.112,115],
+['Alien',1979,'Sci-Fi',8.4,1.066,117],
+['12 Angry Men',1957,'Crime',9.0,0.987,96],
+['The Intouchables',2011,'Comedy',8.5,1.031,112],
+['Monsters, Inc.',2001,'Animation',8.1,1.077,92],
+['A Beautiful Mind',2001,'Drama',8.2,1.056,135],
+['The Pianist',2002,'Drama',8.5,1.014,150],
+['Oppenheimer',2023,'Drama',8.2,1.049,180],
+['Harry Potter and the Deathly Hallows: Part 2',2011,'Action',8.1,1.049,130],
+['Dune: Part One',2021,'Drama',8.0,1.062,155],
+['Scarface',1983,'Crime',8.3,1.02,170],
+['Die Hard',1988,'Thriller',8.2,1.031,132],
+['Taxi Driver',1976,'Crime',8.2,1.029,114],
+['Spirited Away',2001,'Animation',8.6,0.971,124],
+['Spider-Man: No Way Home',2021,'Action',8.1,1.027,148],
+['The Terminator',1984,'Sci-Fi',8.1,1.007,107],
+['The Martian',2015,'Sci-Fi',8.0,1.016,144],
+['Requiem for a Dream',2000,'Drama',8.3,0.976,102],
+['Toy Story 3',2010,'Animation',8.3,0.973,103],
+['Snatch',2000,'Crime',8.2,0.978,102],
+['Star Wars: Episode VII - The Force Awakens',2015,'Sci-Fi',7.7,1.028,138],
+['The Grand Budapest Hotel',2014,'Comedy',8.1,0.975,99],
+['The Good, the Bad and the Ugly',1966,'Drama',8.8,0.892,178],
+['The Hunger Games',2012,'Sci-Fi',7.2,1.085,142],
+['Prisoners',2013,'Crime',8.2,0.94,153],
+['A Clockwork Orange',1971,'Sci-Fi',8.2,0.937,136],
+['Ratatouille',2007,'Animation',8.1,0.948,111],
+['The Revenant',2015,'Drama',8.0,0.952,156],
+['Logan',2017,'Sci-Fi',8.1,0.929,137],
+['City of God',2002,'Crime',8.6,0.873,130],
+['Captain America: The Winter Soldier',2014,'Sci-Fi',7.7,0.974,136],
+['Inside Out',2015,'Animation',8.1,0.919,95],
+['The Big Lebowski',1998,'Crime',8.1,0.918,117],
+['Harry Potter and the Sorcerer\'s Stone',2001,'Action',7.7,0.954,152],
+['Once Upon a Time in... Hollywood',2019,'Comedy',7.6,0.966,161],
+['Avengers: Age of Ultron',2015,'Sci-Fi',7.3,1.004,141],
+['Donnie Darko',2001,'Sci-Fi',8.0,0.913,113],
+['Slumdog Millionaire',2008,'Crime',8.0,0.911,120],
+['The Batman',2022,'Crime',7.8,0.933,176],
+['How to Train Your Dragon',2010,'Animation',8.1,0.897,98],
+['Captain America: Civil War',2016,'Sci-Fi',7.8,0.931,147],
+['The Hobbit: An Unexpected Journey',2012,'Action',7.8,0.93,169],
+['The Incredibles',2004,'Animation',8.0,0.904,115],
+['Top Gun: Maverick',2022,'Drama',8.2,0.88,130],
+['Spider-Man',2002,'Sci-Fi',7.4,0.971,121],
+['The Hangover',2009,'Comedy',7.7,0.933,100],
+['Blade Runner',1982,'Sci-Fi',8.1,0.883,117],
+['Black Swan',2010,'Thriller',8.0,0.891,108],
+['Star Wars: Episode III - Revenge of the Sith',2005,'Action',7.7,0.925,140],
+['Thor: Ragnarok',2017,'Comedy',7.9,0.898,130],
+['Indiana Jones and the Last Crusade',1989,'Action',8.2,0.864,127],
+['Aliens',1986,'Thriller',8.4,0.841,137],
+['The Imitation Game',2014,'Thriller',8.0,0.88,114],
+['Life Is Beautiful',1997,'Comedy',8.6,0.815,116],
+['Gran Torino',2008,'Drama',8.1,0.864,116],
+['Full Metal Jacket',1987,'Drama',8.2,0.852,116],
+['Amélie',2001,'Comedy',8.3,0.841,122],
+['Kill Bill: Vol. 2',2004,'Crime',8.0,0.872,137],
+['Knives Out',2019,'Crime',7.9,0.881,130],
+['300',2006,'Drama',7.6,0.914,117],
+['Gravity',2013,'Sci-Fi',7.7,0.901,91],
+['Iron Man 3',2013,'Sci-Fi',7.1,0.969,130],
+['Arrival',2016,'Sci-Fi',7.9,0.867,116],
+['Thor',2011,'Action',7.0,0.969,115],
+['Heat',1995,'Crime',8.3,0.807,170],
+['Captain America: The First Avenger',2011,'Sci-Fi',6.9,0.97,124],
+['Psycho',1960,'Thriller',8.5,0.787,109],
+['Spider-Man: Into the Spider-Verse',2018,'Animation',8.4,0.794,117],
+['Black Panther',2018,'Sci-Fi',7.3,0.912,134],
+['Doctor Strange',2016,'Action',7.5,0.882,115],
+['Sin City',2005,'Crime',8.0,0.821,124],
+['2001: A Space Odyssey',1968,'Sci-Fi',8.3,0.785,149],
+['Iron Man 2',2010,'Sci-Fi',6.9,0.941,124],
+['Apocalypse Now',1979,'Drama',8.4,0.772,147],
+['Shrek',2001,'Animation',7.9,0.813,90],
+['The Social Network',2010,'Drama',7.8,0.822,120],
+['Get Out',2017,'Thriller',7.8,0.822,104],
+['American Psycho',2000,'Crime',7.6,0.842,102],
+['Dune: Part Two',2024,'Drama',8.4,0.761,166],
+['Fargo',1996,'Crime',8.1,0.788,98],
+['12 Years a Slave',2013,'Drama',8.1,0.788,134],
+['Edge of Tomorrow',2014,'Sci-Fi',7.9,0.807,113],
+['1917',2019,'Drama',8.2,0.774,119],
+['I Am Legend',2007,'Sci-Fi',7.2,0.88,101],
+['Guardians of the Galaxy: Vol. 2',2017,'Comedy',7.6,0.832,136],
+['Dunkirk',2017,'Drama',7.8,0.81,106],
+['X-Men: Days of Future Past',2014,'Sci-Fi',7.9,0.789,132],
+['John Wick',2014,'Crime',7.5,0.831,101],
+['Trainspotting',1996,'Crime',8.1,0.769,93],
+['Million Dollar Baby',2004,'Drama',8.1,0.768,132],
+['Man of Steel',2013,'Sci-Fi',7.1,0.869,143],
+['Pan\'s Labyrinth',2006,'Drama',8.2,0.748,118],
+['La La Land',2016,'Comedy',8.0,0.766,128],
+['Pirates of the Caribbean: Dead Man\'s Chest',2006,'Action',7.4,0.828,151],
+['Harry Potter and the Prisoner of Azkaban',2004,'Action',7.9,0.769,142],
+['Blade Runner 2049',2017,'Drama',8.0,0.757,164],
+['Star Wars: Episode I - The Phantom Menace',1999,'Action',6.5,0.93,136],
+['Skyfall',2012,'Thriller',7.8,0.775,143],
+['Kingsman: The Secret Service',2014,'Comedy',7.7,0.779,129],
+['Jaws',1975,'Thriller',8.1,0.74,124],
+['Oldboy',2003,'Drama',8.3,0.722,120],
+['Casino Royale',2006,'Thriller',8.0,0.747,144],
+['Drive',2011,'Drama',7.8,0.766,100],
+['Coco',2017,'Animation',8.4,0.711,105],
+['Silver Linings Playbook',2012,'Comedy',7.7,0.774,122],
+['District 9',2009,'Sci-Fi',7.9,0.754,112],
+['Spider-Man: Homecoming',2017,'Sci-Fi',7.4,0.801,133],
+['Rogue One: A Star Wars Story',2016,'Sci-Fi',7.8,0.759,133],
+['Spider-Man 2',2004,'Sci-Fi',7.5,0.787,127],
+['Groundhog Day',1993,'Comedy',8.0,0.737,101],
+['X-Men: First Class',2011,'Sci-Fi',7.7,0.765,131],
+['The Hobbit: The Desolation of Smaug',2013,'Action',7.8,0.755,161],
+['The King\'s Speech',2010,'Drama',8.0,0.734,118],
+['The Curious Case of Benjamin Button',2008,'Drama',7.8,0.748,166],
+['There Will Be Blood',2007,'Drama',8.2,0.711,158],
+['Home Alone',1990,'Comedy',7.8,0.747,103],
+['Her',2013,'Sci-Fi',8.0,0.728,126],
+['Harry Potter and the Goblet of Fire',2005,'Action',7.7,0.756,157],
+['The Hunger Games: Catching Fire',2013,'Drama',7.5,0.776,146],
+['Harry Potter and the Chamber of Secrets',2002,'Action',7.5,0.768,161],
+['Deadpool 2',2018,'Comedy',7.6,0.747,119],
+['Green Book',2018,'Comedy',8.2,0.69,130],
+['The Hateful Eight',2015,'Crime',7.8,0.724,168],
+['Ant-Man',2015,'Sci-Fi',7.2,0.782,117],
+['Rocky',1976,'Drama',8.1,0.691,120],
+['Casablanca',1942,'Drama',8.5,0.656,102],
+['Into the Wild',2007,'Drama',8.0,0.696,148],
+['Now You See Me',2013,'Crime',7.2,0.773,115],
+['Life of Pi',2012,'Drama',7.9,0.702,127],
+['Hacksaw Ridge',2016,'Drama',8.1,0.684,139],
+['World War Z',2013,'Thriller',7.0,0.786,116],
+['The Bourne Ultimatum',2007,'Thriller',8.0,0.685,115],
+['12 Monkeys',1995,'Sci-Fi',8.0,0.68,129],
+['Star Wars: Episode II - Attack of the Clones',2002,'Action',6.6,0.824,142],
+['L.A. Confidential',1997,'Crime',8.2,0.659,138],
+['The Notebook',2004,'Drama',7.8,0.692,123],
+['Birdman or (The Unexpected Virtue of Ignorance)',2014,'Comedy',7.7,0.7,119],
+['Cast Away',2000,'Drama',7.8,0.69,143],
+['Wonder Woman',2017,'Action',7.3,0.737,141],
+['Pirates of the Caribbean: At World\'s End',2007,'Action',7.2,0.746,169],
+['Dead Poets Society',1989,'Comedy',8.1,0.656,128],
+['Sherlock Holmes',2009,'Action',7.5,0.708,128],
+['Toy Story 2',1999,'Animation',7.9,0.671,92],
+['The Amazing Spider-Man',2012,'Sci-Fi',6.9,0.768,136],
+['Frozen',2013,'Animation',7.4,0.715,102],
+['Superbad',2007,'Comedy',7.6,0.696,113],
+['Harry Potter and the Order of the Phoenix',2007,'Action',7.5,0.703,138],
+['Lock, Stock and Two Smoking Barrels',1998,'Crime',8.1,0.65,107],
+['Nightcrawler',2014,'Crime',7.8,0.672,117],
+['Thor: The Dark World',2013,'Animation',6.7,0.78,112],
+['Ocean\'s Eleven',2001,'Crime',7.7,0.676,116],
+['Zodiac',2007,'Crime',7.7,0.676,157],
+['Taken',2008,'Crime',7.7,0.673,90],
+['Baby Driver',2017,'Crime',7.5,0.687,113],
+['Argo',2012,'Drama',7.7,0.668,120],
+['Harry Potter and the Deathly Hallows: Part 1',2010,'Action',7.7,0.667,146],
+['Bohemian Rhapsody',2018,'Drama',7.9,0.649,134],
+['Zootopia',2016,'Animation',8.0,0.64,108],
+['Transformers',2007,'Sci-Fi',7.1,0.72,144],
+['It',2017,'Thriller',7.3,0.699,135],
+['Casino',1995,'Crime',8.2,0.621,178],
+['Batman v Superman: Dawn of Justice',2016,'Sci-Fi',6.4,0.793,151],
+['X-Men',2000,'Sci-Fi',7.3,0.693,104],
+['Star Trek',2009,'Sci-Fi',7.9,0.639,127],
+['Jurassic World',2015,'Sci-Fi',6.9,0.731,124],
+['Harry Potter and the Half-Blood Prince',2009,'Action',7.6,0.663,153],
+['Tenet',2020,'Sci-Fi',7.3,0.689,150],
+['Zombieland',2009,'Comedy',7.5,0.669,88],
+['Blood Diamond',2006,'Thriller',8.0,0.627,143],
+['Shaun of the Dead',2004,'Comedy',7.8,0.641,99],
+['The Pursuit of Happyness',2006,'Drama',8.0,0.624,117],
+['Everything Everywhere All at Once',2022,'Comedy',7.7,0.646,139],
+['A Quiet Place',2018,'Sci-Fi',7.5,0.661,90],
+['Three Billboards Outside Ebbing, Missouri',2017,'Crime',8.1,0.61,115],
+['Ex Machina',2014,'Sci-Fi',7.7,0.641,108],
+['The Kashmir Files',2022,'Drama',8.5,0.579,170],
+['Prometheus',2012,'Sci-Fi',7.0,0.702,124],
+['Ted',2012,'Comedy',6.9,0.712,106],
+['Star Wars: Episode VIII - The Last Jedi',2017,'Action',6.8,0.721,152],
+['Monty Python and the Holy Grail',1975,'Comedy',8.1,0.604,91],
+['Men in Black',1997,'Comedy',7.3,0.666,98],
+['Back to the Future Part II',1989,'Sci-Fi',7.8,0.623,108],
+['The Matrix Reloaded',2003,'Sci-Fi',7.2,0.672,138],
+['Despicable Me',2010,'Animation',7.6,0.634,95],
+['Limitless',2011,'Sci-Fi',7.4,0.65,105],
+['The Bourne Identity',2002,'Thriller',7.8,0.615,119],
+['Don\'t Look Up',2021,'Sci-Fi',7.1,0.674,138],
+['Rear Window',1954,'Thriller',8.4,0.569,112],
+['It\'s a Wonderful Life',1946,'Drama',8.6,0.555,130],
+['The Perks of Being a Wallflower',2012,'Drama',7.9,0.599,103],
+['Minority Report',2002,'Crime',7.6,0.622,145],
+['Kick-Ass',2010,'Crime',7.6,0.622,117],
+['500 Days of Summer',2009,'Comedy',7.6,0.621,95],
+['Avatar: The Way of Water',2022,'Animation',7.5,0.629,192],
+['Spider-Man: Far from Home',2019,'Comedy',7.3,0.643,129],
+['Rain Man',1988,'Drama',8.0,0.586,133],
+['The Conjuring',2013,'Thriller',7.5,0.625,112],
+['Barbie',2023,'Comedy',6.8,0.687,114],
+['21 Jump Street',2012,'Crime',7.2,0.648,109],
+['Ford v Ferrari',2019,'Drama',8.1,0.575,152],
+['Looper',2012,'Sci-Fi',7.4,0.629,119],
+['Watchmen',2009,'Drama',7.6,0.612,162],
+['Fury',2014,'Drama',7.6,0.611,134],
+['The Great Gatsby',2013,'Drama',7.2,0.644,143],
+['Rise of the Planet of the Apes',2011,'Animation',7.6,0.607,105],
+['Crazy, Stupid, Love.',2011,'Comedy',7.4,0.622,118],
+['The Hobbit: The Battle of the Five Armies',2014,'Action',7.4,0.619,144],
+['Dr. Strangelove or: How I Learned to Stop Worrying and Love the Bomb',1964,'Comedy',8.3,0.551,95],
+['Split',2016,'Thriller',7.3,0.624,117],
+['Rush',2013,'Drama',8.1,0.561,123],
+['Independence Day',1996,'Sci-Fi',7.0,0.648,145],
+['X2: X-Men United',2003,'Sci-Fi',7.4,0.611,134],
+['Troy',2004,'Action',7.3,0.618,163],
+['Spider-Man: Across the Spider-Verse',2023,'Animation',8.5,0.53,140],
+['Children of Men',2006,'Sci-Fi',7.9,0.567,109],
+['Hot Fuzz',2007,'Comedy',7.8,0.569,121],
+['Captain Marvel',2019,'Sci-Fi',6.7,0.661,123],
+['Kung Fu Panda',2008,'Animation',7.6,0.582,92],
+['Spider-Man 3',2007,'Sci-Fi',6.3,0.702,139],
+['Edward Scissorhands',1990,'Drama',7.8,0.566,105],
+['Source Code',2011,'Drama',7.5,0.584,93],
+['I, Robot',2004,'Sci-Fi',7.1,0.616,115],
+['Little Miss Sunshine',2006,'Comedy',7.8,0.56,101],
+['Love Actually',2003,'Comedy',7.5,0.581,135],
+['Spotlight',2015,'Crime',8.1,0.537,129],
+['Dallas Buyers Club',2013,'Drama',7.9,0.55,117],
+['The Thing',1982,'Sci-Fi',8.2,0.528,109],
+['Big Hero 6',2014,'Animation',7.8,0.555,102],
+['Deadpool & Wolverine',2024,'Comedy',7.5,0.573,128],
+['Warrior',2011,'Drama',8.1,0.53,140],
+['The Help',2011,'Drama',8.1,0.529,146],
+['Indiana Jones and the Temple of Doom',1984,'Action',7.5,0.569,118],
+['Ice Age',2002,'Animation',7.5,0.566,81],
+['Juno',2007,'Comedy',7.4,0.573,96],
+['John Wick: Chapter 2',2017,'Crime',7.4,0.572,122],
+['The Butterfly Effect',2004,'Sci-Fi',7.6,0.556,113],
+['The Big Short',2015,'Comedy',7.8,0.541,130],
+['Howl\'s Moving Castle',2004,'Animation',8.2,0.514,119],
+['Tangled',2010,'Animation',7.7,0.547,100],
+['Mission: Impossible - Ghost Protocol',2011,'Thriller',7.4,0.566,132],
+['American Sniper',2014,'Drama',7.3,0.571,133],
+['Sicario',2015,'Crime',7.7,0.541,121],
+['The Fifth Element',1997,'Sci-Fi',7.6,0.547,126],
+['Mystic River',2003,'Crime',7.9,0.523,138],
+['The Girl with the Dragon Tattoo',2011,'Crime',7.8,0.529,158],
+['Shrek 2',2004,'Animation',7.4,0.557,93],
+['28 Days Later',2002,'Sci-Fi',7.5,0.549,113],
+['Oblivion',2013,'Sci-Fi',7.0,0.587,124],
+['Lost in Translation',2003,'Comedy',7.7,0.53,102],
+['3 Idiots',2009,'Comedy',8.4,0.484,170],
+['Captain Phillips',2013,'Crime',7.8,0.52,134],
+['Training Day',2001,'Crime',7.8,0.519,122],
+['Beauty and the Beast',1991,'Animation',8.0,0.506,84],
+['Citizen Kane',1941,'Drama',8.2,0.493,119],
+['The Exorcist',1973,'Thriller',8.1,0.499,122],
+['Ready Player One',2018,'Sci-Fi',7.4,0.544,140],
+['Princess Mononoke',1997,'Animation',8.3,0.485,133],
+['Pirates of the Caribbean: On Stranger Tides',2011,'Action',6.6,0.609,136],
+['Aladdin',1992,'Animation',8.0,0.502,90],
+['Venom',2018,'Sci-Fi',6.6,0.608,112],
+['The Terminal',2004,'Comedy',7.4,0.537,128],
+['The Bourne Supremacy',2004,'Thriller',7.7,0.514,108],
+['Stand by Me',1986,'Drama',8.1,0.488,89],
+['Amadeus',1984,'Drama',8.4,0.469,160],
+['The Last Samurai',2003,'Drama',7.8,0.505,154],
+['Cars',2006,'Animation',7.3,0.539,116],
+['Bullet Train',2022,'Thriller',7.3,0.539,127],
+['Star Trek Into Darkness',2013,'Sci-Fi',7.7,0.511,132],
+['Predator',1987,'Thriller',7.8,0.502,107],
+['The Amazing Spider-Man 2',2014,'Sci-Fi',6.6,0.593,142],
+['The Theory of Everything',2014,'Drama',7.7,0.508,123],
+['In Bruges',2008,'Crime',7.9,0.495,107],
+['Back to the Future Part III',1990,'Sci-Fi',7.5,0.521,118],
+['Fantastic Beasts and Where to Find Them',2016,'Action',7.2,0.542,132],
+['The Devil Wears Prada',2006,'Comedy',7.0,0.557,109],
+['Room',2015,'Thriller',8.1,0.481,118],
+['The Princess Bride',1987,'Comedy',8.0,0.487,98],
+['Saw',2004,'Thriller',7.6,0.512,103],
+['Dawn of the Planet of the Apes',2014,'Animation',7.6,0.512,130],
+['Top Gun',1986,'Drama',7.0,0.555,109],
+['Moneyball',2011,'Drama',7.6,0.511,133],
+['Mr. & Mrs. Smith',2005,'Crime',6.5,0.596,120],
+['Jojo Rabbit',2019,'Comedy',7.9,0.49,108],
+['Pacific Rim',2013,'Sci-Fi',6.9,0.56,131],
+['The Matrix Revolutions',2003,'Sci-Fi',6.7,0.576,129],
+['Wreck-It Ralph',2012,'Animation',7.7,0.5,101],
+['Unforgiven',1992,'Drama',8.2,0.469,130],
+['The Maze Runner',2014,'Sci-Fi',6.8,0.565,113],
+['Charlie and the Chocolate Factory',2005,'Comedy',6.7,0.573,115],
+['Platoon',1986,'Drama',8.1,0.473,120],
+['American Gangster',2007,'Crime',7.8,0.488,157],
+['Gangs of New York',2002,'Crime',7.5,0.507,167],
+['The Wizard of Oz',1939,'Action',8.1,0.469,102],
+['Ghostbusters',1984,'Comedy',7.8,0.487,105],
+['X-Men: The Last Stand',2006,'Sci-Fi',6.6,0.573,104],
+['Big Fish',2003,'Drama',7.9,0.478,125],
+['Aquaman',2018,'Action',6.8,0.555,143],
+['The Hangover Part II',2011,'Comedy',6.5,0.58,102],
+['Vertigo',1958,'Thriller',8.2,0.459,128],
+['Zack Snyder\'s Justice League',2021,'Sci-Fi',7.9,0.474,242],
+['Guardians of the Galaxy Vol. 3',2023,'Comedy',7.9,0.474,150],
+['American Hustle',2013,'Crime',7.2,0.52,138],
+['Mission: Impossible',1996,'Thriller',7.2,0.519,110],
+['The Incredible Hulk',2008,'Sci-Fi',6.6,0.566,112],
+['Scott Pilgrim vs. the World',2010,'Comedy',7.5,0.498,112],
+['Glass Onion',2022,'Crime',7.1,0.526,139],
+['The Lives of Others',2006,'Thriller',8.4,0.444,137],
+['E.T. the Extra-Terrestrial',1982,'Sci-Fi',7.9,0.472,115],
+['The Hurt Locker',2008,'Thriller',7.5,0.497,131],
+['Sherlock Holmes: A Game of Shadows',2011,'Action',7.4,0.503,129],
+['Doctor Strange in the Multiverse of Madness',2022,'Action',6.8,0.547,126],
+['Lucy',2014,'Sci-Fi',6.4,0.581,89],
+['X-Men Origins: Wolverine',2009,'Sci-Fi',6.5,0.569,107],
+['The Breakfast Club',1985,'Comedy',7.8,0.474,97],
+['The Irishman',2019,'Crime',7.8,0.474,209],
+['We\'re the Millers',2013,'Crime',7.0,0.526,110],
+['The Game',1997,'Thriller',7.7,0.473,129],
+['The Hunger Games: Mockingjay - Part 1',2014,'Sci-Fi',6.6,0.548,123],
+['Soul',2020,'Animation',8.0,0.451,100],
+['Midnight in Paris',2011,'Comedy',7.6,0.472,94],
+['The Gentlemen',2019,'Crime',7.8,0.459,113],
+['The Mummy',1999,'Action',7.1,0.504,124],
+['Shang-Chi and the Legend of the Ten Rings',2021,'Action',7.3,0.49,132],
+['The 40-Year-Old Virgin',2005,'Comedy',7.1,0.503,116],
+['The Menu',2022,'Thriller',7.1,0.503,107],
+['No Time to Die',2021,'Thriller',7.3,0.489,163],
+['John Wick: Chapter 3 - Parabellum',2019,'Crime',7.4,0.482,130],
+['Crash',2004,'Crime',7.7,0.463,112],
+['Borat',2006,'Comedy',7.4,0.479,84],
+['The Wolverine',2013,'Sci-Fi',6.7,0.525,126],
+['Collateral',2004,'Crime',7.5,0.469,120],
+['Black Hawk Down',2001,'Drama',7.7,0.456,144],
+['My Neighbor Totoro',1988,'Animation',8.1,0.433,86],
+['Passengers',2016,'Sci-Fi',7.0,0.499,116],
+['Tropic Thunder',2008,'Comedy',7.1,0.491,107],
+['Jumanji: Welcome to the Jungle',2017,'Comedy',6.9,0.505,119],
+['The Shape of Water',2017,'Drama',7.3,0.477,123],
+['Ant-Man and the Wasp',2018,'Comedy',7.0,0.497,118],
+['Free Guy',2021,'Comedy',7.1,0.49,115],
+['Monty Python\'s Life of Brian',1979,'Comedy',8.0,0.434,94],
+['Mean Girls',2004,'Comedy',7.1,0.487,97],
+['Midsommar',2019,'Thriller',7.1,0.487,148],
+['Seven Samurai',1954,'Drama',8.6,0.402,207],
+['Hancock',2008,'Comedy',6.4,0.54,92],
+['The Cabin in the Woods',2011,'Thriller',7.0,0.492,95],
+['Star Wars: Episode IX - The Rise of Skywalker',2019,'Action',6.3,0.545,141],
+['The Godfather Part III',1990,'Crime',7.5,0.457,162],
+['Divergent',2014,'Drama',6.6,0.519,139],
+['Unbreakable',2000,'Sci-Fi',7.3,0.469,106],
+['A Star Is Born',2018,'Drama',7.6,0.45,136],
+['The Equalizer',2014,'Crime',7.3,0.468,132],
+['The Hunt',2012,'Drama',8.3,0.411,115],
+['Brave',2012,'Animation',7.1,0.48,93],
+['About Time',2013,'Comedy',7.8,0.436,123],
+['Once Upon a Time in America',1984,'Crime',8.3,0.409,229],
+['King Kong',2005,'Drama',7.2,0.471,187],
+['Mulholland Drive',2001,'Thriller',7.9,0.429,147],
+['Spectre',2015,'Thriller',6.8,0.498,148],
+['Horrible Bosses',2011,'Crime',6.9,0.489,98],
+['The Town',2010,'Crime',7.5,0.449,125],
+['The Machinist',2004,'Thriller',7.6,0.443,101],
+['Moana',2016,'Animation',7.6,0.443,107],
+['Despicable Me 2',2013,'Animation',7.3,0.461,98],
+['War of the Worlds',2005,'Sci-Fi',6.6,0.509,117],
+['The Devil\'s Advocate',1997,'Drama',7.5,0.447,144],
+['X-Men: Apocalypse',2016,'Sci-Fi',6.8,0.493,144],
+['10 Things I Hate About You',1999,'Comedy',7.4,0.453,97],
+['Hereditary',2018,'Thriller',7.3,0.459,127],
+['The Day After Tomorrow',2004,'Sci-Fi',6.5,0.513,124],
+['Raging Bull',1980,'Drama',8.1,0.411,129],
+['Madagascar',2005,'Animation',6.9,0.482,86],
+['Your Name.',2016,'Animation',8.4,0.395,106],
+['Scream',1996,'Thriller',7.4,0.448,111],
+['The Suicide Squad',2021,'Comedy',7.2,0.46,132],
+['Mission: Impossible - Rogue Nation',2015,'Thriller',7.4,0.447,131],
+['The Mask',1994,'Crime',7.0,0.472,101],
+['Grave of the Fireflies',1988,'Animation',8.5,0.388,88],
+['Downfall',2004,'Drama',8.2,0.401,156],
+['American Pie',1999,'Comedy',7.0,0.469,95],
+['Die Hard: With a Vengeance',1995,'Thriller',7.6,0.431,128],
+['Once Upon a Time in the West',1968,'Drama',8.5,0.385,145],
+['The Da Vinci Code',2006,'Thriller',6.7,0.487,149],
+['The Nightmare Before Christmas',1993,'Animation',7.9,0.412,76],
+['The Others',2001,'Thriller',7.6,0.428,104],
+['Ferris Bueller\'s Day Off',1986,'Comedy',7.8,0.417,103],
+['In Time',2011,'Sci-Fi',6.7,0.485,109],
+['Man on Fire',2004,'Crime',7.7,0.422,146],
+['Elysium',2013,'Sci-Fi',6.6,0.492,109],
+['Quantum of Solace',2008,'Action',6.5,0.499,106],
+['Mission: Impossible - Fallout',2018,'Thriller',7.7,0.421,147],
+['Dumb and Dumber',1994,'Comedy',7.3,0.444,107],
+['Batman',1989,'Crime',7.5,0.432,126],
+['Inside Man',2006,'Crime',7.6,0.426,129],
+['Eyes Wide Shut',1999,'Thriller',7.5,0.431,159],
+['The Fault in Our Stars',2014,'Drama',7.6,0.425,126],
+['Brokeback Mountain',2005,'Drama',7.7,0.418,134],
+['Armageddon',1998,'Sci-Fi',6.7,0.48,151],
+['The Lego Movie',2014,'Animation',7.7,0.417,100],
+['Bruce Almighty',2003,'Comedy',6.8,0.471,101],
+['Indiana Jones and the Kingdom of the Crystal Skull',2008,'Action',6.2,0.515,122],
+['The Fighter',2010,'Drama',7.8,0.409,116],
+['127 Hours',2010,'Drama',7.5,0.425,94],
+['Hotel Rwanda',2004,'Drama',8.1,0.393,121],
+['Fast Five',2011,'Crime',7.3,0.434,130],
+['The Substance',2024,'Sci-Fi',7.2,0.44,141],
+['The Chronicles of Narnia: The Lion, the Witch and the Wardrobe',2005,'Action',6.9,0.459,143],
+['Black Widow',2021,'Sci-Fi',6.6,0.479,134],
+['The Lost World: Jurassic Park',1997,'Sci-Fi',6.6,0.478,129],
+['Home Alone 2: Lost in New York',1992,'Crime',6.9,0.457,120],
+['Poor Things',2023,'Comedy',7.7,0.409,141],
+['How to Train Your Dragon 2',2014,'Animation',7.8,0.403,102],
+['John Wick: Chapter 4',2023,'Crime',7.6,0.413,169],
+['Furious 7',2015,'Thriller',7.1,0.441,137],
+['The Deer Hunter',1978,'Drama',8.1,0.386,183],
+['Face/Off',1997,'Sci-Fi',7.3,0.428,138],
+['The Fast and the Furious',2001,'Crime',6.8,0.459,106],
+['Cloverfield',2008,'Sci-Fi',7.0,0.445,85],
+['Easy A',2010,'Comedy',7.0,0.445,92],
+['Beetlejuice',1988,'Comedy',7.4,0.419,92],
+['Live Free or Die Hard',2007,'Thriller',7.1,0.436,128],
+['The Nice Guys',2016,'Crime',7.4,0.418,116],
+['Moon',2009,'Sci-Fi',7.8,0.396,97],
+['Speed',1994,'Thriller',7.3,0.423,116],
+['Fast & Furious 6',2013,'Crime',7.0,0.441,130],
+['22 Jump Street',2014,'Crime',7.0,0.441,112],
+['The Aviator',2004,'Drama',7.5,0.41,170],
+['Before Sunrise',1995,'Comedy',8.1,0.379,101],
+['Monsters University',2013,'Animation',7.2,0.426,104],
+['North by Northwest',1959,'Drama',8.3,0.369,136],
+['Chinatown',1974,'Thriller',8.1,0.377,130],
+['Jackie Brown',1997,'Crime',7.5,0.405,154],
+['The Illusionist',2006,'Drama',7.5,0.405,110],
+['Justice League',2017,'Sci-Fi',6.0,0.506,120],
+['Boyhood',2014,'Drama',7.9,0.382,165],
+['Sleepy Hollow',1999,'Thriller',7.3,0.413,105],
+['This Is the End',2013,'Sci-Fi',6.6,0.456,107],
+['Alice in Wonderland',2010,'Action',6.4,0.469,108],
+['Snowpiercer',2013,'Sci-Fi',7.1,0.422,126],
+['Scent of a Woman',1992,'Drama',8.0,0.373,156],
+['Godzilla',2014,'Sci-Fi',6.4,0.466,123],
+['Sweeney Todd: The Demon Barber of Fleet Street',2007,'Thriller',7.3,0.407,116],
+['Moonrise Kingdom',2012,'Comedy',7.7,0.383,94],
+['The Blind Side',2009,'Drama',7.6,0.388,129],
+['Pride & Prejudice',2005,'Drama',7.8,0.378,129],
+['Marriage Story',2019,'Drama',7.9,0.373,137],
+['Jumanji',1995,'Comedy',7.1,0.415,104],
+['Mission: Impossible III',2006,'Thriller',6.9,0.426,126],
+['Die Hard 2',1990,'Thriller',7.2,0.408,124],
+['Maleficent',2014,'Drama',6.9,0.425,97],
+['Nobody',2021,'Crime',7.4,0.396,92],
+['Gone with the Wind',1939,'Drama',8.2,0.356,238],
+['Flight',2012,'Thriller',7.3,0.398,138],
+['The Accountant',2016,'Crime',7.3,0.398,128],
+['Shazam!',2019,'Comedy',7.0,0.414,132],
+['Pretty Woman',1990,'Comedy',7.1,0.407,119],
+['To Kill a Mockingbird',1962,'Crime',8.2,0.351,129],
+['Wanted',2008,'Crime',6.7,0.429,110],
+['True Grit',2010,'Drama',7.6,0.377,110],
+['Total Recall',1990,'Sci-Fi',7.5,0.382,113],
+['Constantine',2005,'Thriller',7.0,0.409,121],
+['The Ring',2002,'Thriller',7.1,0.403,115],
+['The Italian Job',2003,'Crime',7.0,0.408,111],
+['Anchorman: The Legend of Ron Burgundy',2004,'Comedy',7.1,0.402,94],
+['Ocean\'s Twelve',2004,'Crime',6.5,0.438,125],
+['Apocalypto',2006,'Drama',7.9,0.36,139],
+['Being John Malkovich',1999,'Comedy',7.7,0.369,113],
+['Lawrence of Arabia',1962,'Drama',8.3,0.342,227],
+['Solo: A Star Wars Story',2018,'Sci-Fi',6.9,0.411,135],
+['Interview with the Vampire: The Vampire Chronicles',1994,'Thriller',7.5,0.378,123],
+['Transformers: Dark of the Moon',2011,'Animation',6.2,0.457,154],
+['50 First Dates',2004,'Comedy',6.8,0.416,99],
+['Cloud Atlas',2012,'Sci-Fi',7.3,0.387,172],
+['Thor: Love and Thunder',2022,'Comedy',6.1,0.463,118],
+['Signs',2002,'Sci-Fi',6.8,0.415,106],
+['The Rock',1996,'Thriller',7.4,0.381,136],
+['Men in Black 3',2012,'Comedy',6.8,0.413,106],
+['Call Me by Your Name',2017,'Drama',7.8,0.36,132],
+['Magnolia',1999,'Drama',8.0,0.35,188],
+['Wedding Crashers',2005,'Comedy',7.0,0.399,119],
+['Manchester by the Sea',2016,'Drama',7.8,0.358,137],
+['Bird Box',2018,'Sci-Fi',6.6,0.423,124],
+['Incredibles 2',2018,'Animation',7.5,0.372,118],
+['Hachi: A Dog\'s Tale',2009,'Drama',8.1,0.344,93],
+['Notting Hill',1999,'Comedy',7.2,0.386,124],
+['10 Cloverfield Lane',2016,'Sci-Fi',7.2,0.385,103],
+['The Untouchables',1987,'Crime',7.8,0.354,119],
+['Yes Man',2008,'Comedy',6.8,0.406,104],
+['Knocked Up',2007,'Comedy',6.9,0.4,129],
+['Terminator 3: Rise of the Machines',2003,'Sci-Fi',6.3,0.438,109],
+['Jack Reacher',2012,'Thriller',7.0,0.393,130],
+['Donnie Brasco',1997,'Crime',7.7,0.357,127],
+['The Hunger Games: Mockingjay - Part 2',2015,'Sci-Fi',6.6,0.416,137],
+['Friends with Benefits',2011,'Comedy',6.5,0.421,109],
+['Lord of War',2005,'Crime',7.6,0.36,122],
+['Transformers: Revenge of the Fallen',2009,'Sci-Fi',6.0,0.455,149],
+['The Secret Life of Walter Mitty',2013,'Comedy',7.3,0.373,114],
+['Les Misérables',2012,'Drama',7.5,0.363,158],
+['Shooter',2007,'Thriller',7.2,0.377,124],
+['The Proposal',2009,'Comedy',6.8,0.399,108],
+['Real Steel',2011,'Sci-Fi',7.1,0.382,127],
+['O Brother, Where Art Thou?',2000,'Crime',7.7,0.352,107],
+['The Fugitive',1993,'Crime',7.8,0.347,130],
+['Lady Bird',2017,'Comedy',7.4,0.365,94],
+['Kingsman: The Golden Circle',2017,'Comedy',6.7,0.403,141],
+['50/50',2011,'Comedy',7.6,0.355,100],
+['Cinema Paradiso',1988,'Drama',8.5,0.317,174],
+['Annihilation',2018,'Thriller',6.8,0.395,115],
+['Men in Black II',2002,'Comedy',6.2,0.433,88],
+['Gattaca',1997,'Sci-Fi',7.7,0.348,106],
+['Us',2019,'Thriller',6.8,0.394,116],
+['Ocean\'s Thirteen',2007,'Crime',6.9,0.388,122],
+['3:10 to Yuma',2007,'Crime',7.6,0.352,122],
+['Mulan',1998,'Animation',7.7,0.347,87],
+['Night at the Museum',2006,'Comedy',6.5,0.411,108],
+['Up in the Air',2009,'Comedy',7.4,0.361,109],
+['From Dusk Till Dawn',1996,'Crime',7.2,0.371,108],
+['The Mist',2007,'Sci-Fi',7.1,0.376,126],
+['Super 8',2011,'Sci-Fi',7.0,0.381,112],
+['Eternals',2021,'Action',6.2,0.429,156],
+['The Simpsons Movie',2007,'Animation',7.3,0.364,87],
+['Meet the Parents',2000,'Comedy',7.0,0.379,108],
+['Equilibrium',2002,'Sci-Fi',7.3,0.363,107],
+['Uncut Gems',2019,'Crime',7.4,0.358,135],
+['Burn After Reading',2008,'Crime',7.0,0.377,96],
+['Tron: Legacy',2010,'Sci-Fi',6.8,0.388,125],
+['Hugo',2011,'Drama',7.5,0.35,126],
+['The Wrestler',2008,'Drama',7.9,0.332,109],
+['Bridge of Spies',2015,'Thriller',7.6,0.345,142],
+['Kung Fu Panda 2',2011,'Animation',7.3,0.359,90],
+['Halloween',1978,'Thriller',7.7,0.34,91],
+['The Greatest Showman',2017,'Drama',7.5,0.349,105],
+['Moonlight',2016,'Drama',7.4,0.353,111],
+['Apollo 13',1995,'Drama',7.7,0.339,140],
+['Lucky Number Slevin',2006,'Crime',7.7,0.339,110],
+['National Treasure',2004,'Action',6.9,0.378,131],
+['As Good as It Gets',1997,'Comedy',7.7,0.338,139],
+['All Quiet on the Western Front',2022,'Drama',7.8,0.333,148],
+['Kingdom of Heaven',2005,'Drama',7.3,0.355,144],
+['School of Rock',2003,'Comedy',7.2,0.359,109],
+['Pineapple Express',2008,'Crime',6.9,0.374,111],
+['The Holiday',2006,'Comedy',7.0,0.368,136],
+['Atonement',2007,'Drama',7.8,0.33,123],
+['The Man from U.N.C.L.E.',2015,'Comedy',7.2,0.357,116],
+['Law Abiding Citizen',2009,'Crime',7.4,0.346,109],
+['Hellboy',2004,'Action',6.9,0.371,122],
+['Before Sunset',2004,'Drama',8.1,0.316,80],
+['Beauty and the Beast',2017,'Action',7.1,0.36,129],
+['Terminator Salvation',2009,'Sci-Fi',6.5,0.393,115],
+['The Royal Tenenbaums',2001,'Comedy',7.6,0.336,110],
+['Creed',2015,'Drama',7.6,0.336,133],
+['Black Panther: Wakanda Forever',2022,'Animation',6.6,0.386,161],
+['8 Mile',2002,'Drama',7.2,0.352,110],
+['Starship Troopers',1997,'Sci-Fi',7.3,0.347,129],
+['Mission: Impossible II',2000,'Thriller',6.1,0.415,123],
+['Zero Dark Thirty',2012,'Thriller',7.4,0.342,157],
+['El Camino',2019,'Crime',7.3,0.346,122],
+['The Goonies',1985,'Comedy',7.7,0.328,114],
+['Kong: Skull Island',2017,'Action',6.7,0.376,118],
+['Nocturnal Animals',2016,'Thriller',7.4,0.34,116],
+['Pirates of the Caribbean: Dead Men Tell No Tales',2017,'Action',6.5,0.387,129],
+['Liar Liar',1997,'Comedy',6.9,0.364,86],
+['The Conjuring 2',2016,'Thriller',7.3,0.344,134],
+['Insidious',2010,'Thriller',6.8,0.368,103],
+['Some Like It Hot',1959,'Comedy',8.2,0.305,121],
+['Mission: Impossible - Dead Reckoning Part One',2023,'Thriller',7.6,0.329,163],
+['Pitch Perfect',2012,'Comedy',7.1,0.352,112],
+['Me Before You',2016,'Drama',7.4,0.337,110],
+['Click',2006,'Comedy',6.4,0.389,107],
+['Almost Famous',2000,'Comedy',7.9,0.315,122],
+['Dances with Wolves',1990,'Drama',8.0,0.311,181],
+['Predestination',2014,'Sci-Fi',7.4,0.336,97],
+['Batman Returns',1992,'Crime',7.1,0.35,126],
+['The Sting',1973,'Crime',8.2,0.303,129],
+['28 Weeks Later',2007,'Sci-Fi',6.8,0.365,100],
+['A Few Good Men',1992,'Thriller',7.8,0.318,138],
+['The Witch',2015,'Thriller',7.0,0.354,92],
+['There\'s Something About Mary',1998,'Comedy',7.1,0.349,119],
+['Seven Pounds',2008,'Thriller',7.6,0.326,123],
+['Insomnia',2002,'Thriller',7.2,0.344,118],
+['For a Few Dollars More',1965,'Drama',8.2,0.301,132],
+['Serenity',2005,'Sci-Fi',7.8,0.316,119],
+['Elf',2003,'Comedy',7.1,0.347,97],
+['The Book of Eli',2010,'Drama',6.8,0.362,118],
+['The Interview',2014,'Comedy',6.5,0.378,112],
+['Deja Vu',2006,'Sci-Fi',7.1,0.346,126],
+['Ace Ventura: Pet Detective',1994,'Comedy',6.9,0.355,86],
+['A.I. Artificial Intelligence',2001,'Sci-Fi',7.2,0.34,146],
+['The Expendables',2010,'Thriller',6.4,0.381,103],
+['Lone Survivor',2013,'Drama',7.5,0.325,121],
+['Corpse Bride',2005,'Animation',7.4,0.329,77],
+['Babel',2006,'Drama',7.4,0.329,143],
+['A Bug\'s Life',1998,'Animation',7.2,0.338,95],
+['Wind River',2017,'Crime',7.7,0.316,107],
+['Modern Times',1936,'Comedy',8.5,0.286,87],
+['War for the Planet of the Apes',2017,'Animation',7.4,0.328,140],
+['Boogie Nights',1997,'Drama',7.9,0.307,155],
+['Due Date',2010,'Comedy',6.5,0.372,95],
+['Fantastic Mr. Fox',2009,'Animation',7.9,0.306,87],
+['The Graduate',1967,'Comedy',8.0,0.302,106],
+['Furiosa: A Mad Max Saga',2024,'Sci-Fi',7.5,0.322,148],
+['Finding Dory',2016,'Animation',7.2,0.335,97],
+['Toy Story 4',2019,'Animation',7.6,0.317,100],
+['The Dictator',2012,'Comedy',6.5,0.369,83],
+['Das Boot',1981,'Drama',8.3,0.288,149],
+['Sully',2016,'Drama',7.4,0.323,96],
+['Megamind',2010,'Animation',7.3,0.327,95],
+['The Little Mermaid',1989,'Animation',7.6,0.313,83],
+['The Lobster',2015,'Sci-Fi',7.1,0.335,119],
+['Jurassic World: Fallen Kingdom',2018,'Sci-Fi',6.2,0.383,128],
+['RED',2010,'Crime',7.0,0.339,111],
+['Gone Baby Gone',2007,'Crime',7.6,0.312,114],
+['Fear and Loathing in Las Vegas',1998,'Comedy',7.4,0.32,118],
+['Alita: Battle Angel',2019,'Animation',7.3,0.324,122],
+['The Sound of Music',1965,'Drama',8.1,0.292,174],
+['Moulin Rouge!',2001,'Drama',7.5,0.315,127],
+['BlacKkKlansman',2018,'Crime',7.5,0.315,135],
+['The Mummy Returns',2001,'Action',6.4,0.369,130],
+['Step Brothers',2008,'Comedy',6.9,0.342,98],
+['Don\'t Breathe',2016,'Crime',7.1,0.332,88],
+['Contact',1997,'Sci-Fi',7.5,0.314,150],
+['Grease',1978,'Comedy',7.2,0.327,110],
+['Blade',1998,'Sci-Fi',7.1,0.331,120],
+['Rush Hour',1998,'Crime',7.1,0.331,98],
+['Singin\' in the Rain',1952,'Comedy',8.3,0.283,103],
+['RoboCop',1987,'Sci-Fi',7.6,0.309,102],
+['Office Space',1999,'Comedy',7.6,0.309,89],
+['Train to Busan',2016,'Thriller',7.6,0.309,118],
+['Coraline',2009,'Animation',7.8,0.301,100],
+['Con Air',1997,'Crime',6.9,0.34,115],
+['Death Proof',2007,'Thriller',7.0,0.335,127],
+['Rango',2011,'Animation',7.3,0.321,107],
+['Dog Day Afternoon',1975,'Crime',8.0,0.292,125],
+['A Quiet Place Part II',2020,'Sci-Fi',7.2,0.324,97],
+['The Island',2005,'Sci-Fi',6.8,0.343,136],
+['Pearl Harbor',2001,'Drama',6.3,0.37,183],
+['Crouching Tiger, Hidden Dragon',2000,'Drama',7.9,0.295,120],
+['First Blood',1982,'Thriller',7.7,0.302,93],
+['It: Chapter Two',2019,'Thriller',6.5,0.357,169],
+['Killers of the Flower Moon',2023,'Crime',7.5,0.309,206],
+['Now You See Me 2',2016,'Comedy',6.4,0.362,129],
+['The Elephant Man',1980,'Drama',8.2,0.282,124],
+['Public Enemies',2009,'Crime',6.9,0.335,140],
+['Hitch',2005,'Comedy',6.6,0.35,118],
+['A Separation',2011,'Drama',8.3,0.278,123],
+['Annie Hall',1977,'Comedy',7.9,0.292,93],
+['The Transporter',2002,'Crime',6.8,0.339,92],
+['Road to Perdition',2002,'Crime',7.6,0.301,117],
+['Jerry Maguire',1996,'Comedy',7.3,0.313,139],
+['The Platform',2019,'Sci-Fi',7.0,0.326,94],
+['The Great Escape',1963,'Thriller',8.2,0.278,172],
+['Stardust',2007,'Drama',7.6,0.299,127],
+['The Whale',2022,'Drama',7.6,0.299,117],
+['Forgetting Sarah Marshall',2008,'Comedy',7.1,0.32,111],
+['The Place Beyond the Pines',2012,'Crime',7.3,0.31,140],
+['Hidden Figures',2016,'Drama',7.8,0.29,127],
+['Alien³',1992,'Sci-Fi',6.4,0.353,114],
+['Contagion',2011,'Thriller',6.8,0.332,106],
+['Lethal Weapon',1987,'Crime',7.6,0.297,109],
+['The Banshees of Inisherin',2022,'Comedy',7.6,0.297,114],
+['The Patriot',2000,'Drama',7.2,0.313,165],
+['Final Destination',2000,'Thriller',6.7,0.336,98],
+['Mrs. Doubtfire',1993,'Comedy',7.1,0.317,125],
+['The Lighthouse',2019,'Thriller',7.4,0.304,109],
+['Red Dragon',2002,'Crime',7.2,0.312,124],
+['Red Notice',2021,'Thriller',6.3,0.356,118],
+['Hotel Transylvania',2012,'Animation',7.1,0.315,91],
+['The Jungle Book',2016,'Animation',7.3,0.306,106],
+['Jurassic Park III',2001,'Sci-Fi',6.0,0.372,92],
+['Salt',2010,'Thriller',6.5,0.343,100],
+['End of Watch',2012,'Crime',7.6,0.293,109],
+['Airplane!',1980,'Comedy',7.7,0.289,88],
+['Little Women',2019,'Drama',7.8,0.285,135],
+['Dredd',2012,'Sci-Fi',7.1,0.313,95],
+['Primal Fear',1996,'Crime',7.7,0.288,129],
+['Bridesmaids',2011,'Comedy',6.8,0.326,125],
+['Alien: Covenant',2017,'Sci-Fi',6.4,0.346,122],
+['The Expendables 2',2012,'Thriller',6.6,0.335,103],
+['Shrek the Third',2007,'Animation',6.1,0.362,93],
+['The Intern',2015,'Comedy',7.1,0.311,121],
+['Enemy at the Gates',2001,'Drama',7.5,0.294,131],
+['Sunset Boulevard',1950,'Drama',8.4,0.262,110],
+['True Lies',1994,'Thriller',7.3,0.301,141],
+['Ben-Hur',1959,'Drama',8.1,0.271,212],
+['Walk the Line',2005,'Drama',7.8,0.281,136],
+['Angels & Demons',2009,'Thriller',6.7,0.326,138],
+['Fast & Furious',2009,'Thriller',6.5,0.336,107],
+['Aladdin',2019,'Comedy',6.9,0.316,128],
+['Neighbors',2014,'Comedy',6.3,0.346,97],
+['Memories of Murder',2003,'Crime',8.1,0.269,131],
+['The Great Dictator',1940,'Comedy',8.4,0.259,125],
+['Cruella',2021,'Crime',7.3,0.298,134],
+['The Bourne Legacy',2012,'Thriller',6.6,0.329,135],
+['Ice Age: The Meltdown',2006,'Animation',6.8,0.319,91],
+['Amores Perros',2000,'Thriller',8.0,0.271,154],
+['Nope',2022,'Sci-Fi',6.8,0.318,130],
+['Sinister',2012,'Thriller',6.8,0.318,110],
+['A Nightmare on Elm Street',1984,'Thriller',7.4,0.292,91],
+['Meet Joe Black',1998,'Drama',7.2,0.3,178],
+['Blow',2001,'Crime',7.5,0.288,124],
+['The World\'s End',2013,'Sci-Fi',6.9,0.313,109],
+['Fantastic Beasts: The Crimes of Grindelwald',2018,'Action',6.5,0.332,134],
+['Happy Gilmore',1996,'Comedy',7.0,0.308,92],
+['Bad Boys',1995,'Crime',6.8,0.316,119],
+['Identity',2003,'Thriller',7.3,0.294,90],
+['Encanto',2021,'Animation',7.2,0.298,102],
+['Phone Booth',2002,'Crime',7.1,0.302,81],
+['Panic Room',2002,'Crime',6.8,0.315,112],
+['1408',2007,'Thriller',6.8,0.315,104],
+['Anora',2024,'Comedy',7.4,0.289,139],
+['How the Grinch Stole Christmas',2000,'Comedy',6.4,0.334,104],
+['War Dogs',2016,'Crime',7.1,0.301,114],
+['Lion',2016,'Drama',8.0,0.267,118],
+['Hannibal',2001,'Crime',6.8,0.314,131],
+['Vanilla Sky',2001,'Drama',6.9,0.309,136],
+['The Iron Giant',1999,'Animation',8.1,0.262,86],
+['Hell or High Water',2016,'Crime',7.6,0.279,102],
+['Jumanji: The Next Level',2019,'Comedy',6.6,0.321,123],
+['Philadelphia',1993,'Drama',7.7,0.275,125],
+['Changeling',2008,'Crime',7.7,0.275,141],
+['The Boy in the Striped Pajamas',2008,'Drama',7.7,0.275,94],
+['Eastern Promises',2007,'Crime',7.6,0.278,100],
+['Underworld',2003,'Thriller',7.0,0.301,121],
+['The Northman',2022,'Drama',7.0,0.301,137],
+['How to Lose a Guy in 10 Days',2003,'Comedy',6.5,0.324,116],
+['When Harry Met Sally...',1989,'Comedy',7.7,0.273,95],
+['Perfume: The Story of a Murderer',2006,'Crime',7.5,0.28,147],
+['Incendies',2010,'Drama',8.3,0.253,131],
+['Hellboy II: The Golden Army',2008,'Action',7.0,0.299,120],
+['Murder on the Orient Express',2017,'Crime',6.5,0.322,114],
+['Taken 2',2012,'Crime',6.2,0.337,92],
+['The Reader',2008,'Drama',7.6,0.274,124],
+['Dawn of the Dead',2004,'Thriller',7.2,0.289,101],
+['Lincoln',2012,'Drama',7.3,0.285,150],
+['Scary Movie',2000,'Comedy',6.3,0.33,88],
+['The Super Mario Bros. Movie',2023,'Animation',7.0,0.297,92],
+['The Holdovers',2023,'Comedy',7.9,0.263,133],
+['The Other Guys',2010,'Crime',6.7,0.31,107],
+['Misery',1990,'Thriller',7.8,0.266,107],
+['Sunshine',2007,'Sci-Fi',7.2,0.288,107],
+['Rosemary\'s Baby',1968,'Thriller',8.0,0.259,137],
+['What\'s Eating Gilbert Grape',1993,'Drama',7.7,0.269,118],
+['The Blair Witch Project',1999,'Thriller',6.5,0.318,81],
+['Zoolander',2001,'Comedy',6.5,0.318,90],
+['Prince of Persia: The Sands of Time',2010,'Action',6.5,0.318,116],
+['GoldenEye',1995,'Thriller',7.2,0.287,130],
+['True Romance',1993,'Crime',7.9,0.261,119],
+['Jumper',2008,'Sci-Fi',6.1,0.338,88],
+['Resident Evil',2002,'Sci-Fi',6.6,0.312,100],
+['Alien: Romulus',2024,'Sci-Fi',7.1,0.289,119],
+['Seven Psychopaths',2012,'Crime',7.1,0.289,110],
+['Hercules',1997,'Animation',7.3,0.281,93],
+['It Follows',2014,'Thriller',6.8,0.3,100],
+['300: Rise of an Empire',2014,'Animation',6.2,0.329,102],
+['Southpaw',2015,'Drama',7.3,0.279,124],
+['Conclave',2024,'Thriller',7.4,0.275,120],
+['The Fast and the Furious: Tokyo Drift',2006,'Crime',6.1,0.333,104],
+['The Invisible Man',2020,'Thriller',7.1,0.286,124],
+['A History of Violence',2005,'Crime',7.4,0.274,96],
+['Dangal',2016,'Drama',8.3,0.244,161],
+['Gone in 60 Seconds',2000,'Crime',6.5,0.311,118],
+['Jai Bhim',2021,'Crime',8.6,0.235,164],
+['The Talented Mr. Ripley',1999,'Crime',7.4,0.273,139],
+['The Father',2020,'Drama',8.2,0.246,97],
+['The Bridge on the River Kwai',1957,'Drama',8.1,0.249,161],
+['Glass',2019,'Thriller',6.6,0.305,129],
+['Paths of Glory',1957,'Drama',8.4,0.239,88],
+['Gremlins',1984,'Comedy',7.3,0.275,106],
+['Enemy of the State',1998,'Thriller',7.3,0.275,132],
+['The Passion of the Christ',2004,'Drama',7.3,0.275,127],
+['A Fistful of Dollars',1964,'Drama',7.9,0.254,99],
+['The Boondock Saints',1999,'Crime',7.6,0.263,108],
+['The Artist',2011,'Comedy',7.8,0.256,100],
+['Mamma Mia!',2008,'Comedy',6.5,0.307,108],
+['Olympus Has Fallen',2013,'Thriller',6.5,0.307,119],
+['Dirty Dancing',1987,'Drama',7.1,0.281,100],
+['Vicky Cristina Barcelona',2008,'Comedy',7.1,0.281,96],
+['The Bucket List',2007,'Comedy',7.3,0.273,97],
+['The Secret in Their Eyes',2009,'Drama',8.2,0.243,129],
+['The Lion King',2019,'Animation',6.8,0.293,118],
+['Dracula',1992,'Thriller',7.4,0.269,128],
+['RocknRolla',2008,'Crime',7.2,0.276,114],
+['Non-Stop',2014,'Thriller',6.9,0.288,106],
+['Mr. Nobody',2009,'Drama',7.7,0.258,141],
+['The Karate Kid',1984,'Drama',7.3,0.272,126],
+['Hook',1991,'Comedy',6.8,0.292,142],
+['Warcraft',2016,'Animation',6.7,0.296,123],
+['The Adjustment Bureau',2011,'Crime',7.0,0.283,106],
+['Ice Age: Dawn of the Dinosaurs',2009,'Animation',6.9,0.287,94],
+['Dungeons & Dragons: Honor Among Thieves',2023,'Comedy',7.2,0.275,134],
+['The Impossible',2012,'Thriller',7.5,0.264,114],
+['John Carter',2012,'Animation',6.6,0.3,132],
+['Extraction',2020,'Crime',6.8,0.291,116],
+['The Lincoln Lawyer',2011,'Crime',7.3,0.271,118],
+['Cloudy with a Chance of Meatballs',2009,'Animation',6.9,0.286,90],
+['The Descent',2005,'Thriller',7.2,0.274,99],
+['Tarzan',1999,'Animation',7.3,0.27,88],
+['Gandhi',1982,'Drama',8.0,0.246,191],
+['Carlito\'s Way',1993,'Crime',7.9,0.249,144],
+['Saw II',2005,'Thriller',6.6,0.298,93],
+['I, Tonya',2017,'Comedy',7.5,0.262,119],
+['The Village',2004,'Thriller',6.6,0.297,108],
+['Robin Hood',2010,'Drama',6.6,0.297,140],
+['The Road',2009,'Thriller',7.2,0.272,111],
+['Remember the Titans',2000,'Comedy',7.8,0.251,113],
+['Captain Fantastic',2016,'Comedy',7.8,0.251,118],
+['Kick-Ass 2',2013,'Crime',6.5,0.301,103],
+['Focus',2015,'Crime',6.6,0.296,105],
+['Paul',2011,'Sci-Fi',6.9,0.283,104],
+['Valkyrie',2008,'Thriller',7.1,0.275,121],
+['Ip Man',2008,'Drama',8.0,0.244,106],
+['Bridget Jones\'s Diary',2001,'Comedy',6.8,0.287,97],
+['Klaus',2019,'Animation',8.2,0.238,96],
+['2 Fast 2 Furious',2003,'Crime',6.0,0.325,107],
+['Maze Runner: The Scorch Trials',2015,'Sci-Fi',6.3,0.309,131],
+['Orphan',2009,'Thriller',7.0,0.278,123],
+['Chronicle',2012,'Crime',7.0,0.278,84],
+['Prey',2022,'Thriller',7.1,0.274,100],
+['The Favourite',2018,'Comedy',7.5,0.259,119],
+['Terminator Genisys',2015,'Sci-Fi',6.3,0.308,126],
+['Gladiator II',2024,'Drama',6.4,0.303,148],
+['Wild Tales',2014,'Thriller',8.1,0.239,122],
+['Like Stars on Earth',2007,'Drama',8.3,0.233,162],
+['Meet the Fockers',2004,'Comedy',6.4,0.302,115],
+['Game Night',2018,'Comedy',6.9,0.28,100],
+['Chappie',2015,'Crime',6.8,0.284,120],
+['Natural Born Killers',1994,'Crime',7.2,0.268,119],
+['Master and Commander: The Far Side of the World',2003,'Drama',7.5,0.257,138],
+['Promising Young Woman',2020,'Crime',7.5,0.257,113],
+['Clueless',1995,'Comedy',6.9,0.279,97],
+['Spy',2015,'Comedy',7.0,0.275,120],
+['Dodgeball: A True Underdog Story',2004,'Comedy',6.7,0.287,92],
+['21 Grams',2003,'Crime',7.6,0.253,124],
+['Snow White and the Huntsman',2012,'Drama',6.1,0.315,127],
+['Crank',2006,'Crime',6.9,0.278,88],
+['Austin Powers: International Man of Mystery',1997,'Comedy',7.0,0.274,89],
+['21',2008,'Crime',6.8,0.282,123],
+['Elvis',2022,'Drama',7.3,0.262,159],
+['Willy Wonka & the Chocolate Factory',1971,'Comedy',7.8,0.245,100],
+['Bad Boys II',2003,'Crime',6.6,0.289,147],
+['Big',1988,'Comedy',7.3,0.261,104],
+['Sleepers',1996,'Crime',7.5,0.254,147],
+['Munich',2005,'Thriller',7.5,0.254,164],
+['Butch Cassidy and the Sundance Kid',1969,'Crime',8.0,0.238,110],
+['Nosferatu',2024,'Thriller',7.1,0.268,132],
+['The Descendants',2011,'Comedy',7.3,0.26,115],
+['Inside Out 2',2024,'Animation',7.5,0.253,96],
+['Uncharted',2022,'Action',6.3,0.301,116],
+['Blue Velvet',1986,'Crime',7.7,0.246,120],
+['Lawless',2012,'Crime',7.2,0.263,116],
+['Rio',2011,'Animation',6.9,0.274,96],
+['Civil War',2024,'Thriller',7.0,0.27,109],
+['Star Trek Beyond',2016,'Sci-Fi',7.0,0.27,122],
+['Grown Ups',2010,'Comedy',6.0,0.314,102],
+['Unknown',2011,'Thriller',6.8,0.277,113],
+['Van Helsing',2004,'Action',6.1,0.308,131],
+['Saltburn',2023,'Thriller',7.0,0.268,131],
+['Let the Right One In',2008,'Thriller',7.8,0.24,114],
+['Disturbia',2007,'Crime',6.8,0.275,105],
+['The Adventures of Tintin',2011,'Animation',7.3,0.256,107],
+['Legally Blonde',2001,'Comedy',6.5,0.287,96],
+['American Pie 2',2001,'Comedy',6.5,0.287,108],
+['The A-Team',2010,'Crime',6.7,0.278,117],
+['Just Go with It',2011,'Comedy',6.4,0.291,117],
+['The Wild Robot',2024,'Animation',8.2,0.227,102],
+['Black Adam',2022,'Action',6.1,0.305,125],
+['Cube',1997,'Sci-Fi',7.1,0.262,90],
+['National Lampoon\'s Christmas Vacation',1989,'Comedy',7.5,0.248,97],
+['Clerks',1994,'Comedy',7.7,0.241,92],
+['Erin Brockovich',2000,'Drama',7.5,0.247,131],
+['Chicago',2002,'Crime',7.2,0.257,113],
+['The Emperor\'s New Groove',2000,'Animation',7.4,0.25,78],
+['Kiss Kiss Bang Bang',2005,'Crime',7.4,0.25,103],
+['Superman Returns',2006,'Sci-Fi',6.1,0.303,154],
+['Pitch Black',2000,'Sci-Fi',7.0,0.264,109],
+['La haine',1995,'Crime',8.1,0.228,98],
+['Stranger Than Fiction',2006,'Comedy',7.5,0.246,113],
+['City Lights',1931,'Comedy',8.5,0.217,87],
+['The Babadook',2014,'Thriller',6.8,0.271,94],
+['The Grey',2011,'Drama',6.7,0.275,117],
+['Barbarian',2022,'Thriller',7.0,0.263,102],
+['The Evil Dead',1981,'Thriller',7.3,0.252,85],
+['Chef',2014,'Comedy',7.3,0.252,114],
+['The Fountain',2006,'Drama',7.1,0.259,97],
+['The Black Phone',2021,'Thriller',6.9,0.266,103],
+['Life',2017,'Sci-Fi',6.6,0.278,104],
+['Ad Astra',2019,'Drama',6.5,0.282,123],
+['Rocky II',1979,'Drama',7.3,0.251,119],
+['Minions',2015,'Animation',6.4,0.286,91],
+['Dark Shadows',2012,'Comedy',6.2,0.295,113],
+['The Apartment',1960,'Comedy',8.3,0.22,125],
+['Straight Outta Compton',2015,'Drama',7.8,0.234,147],
+['Ghost',1990,'Drama',7.1,0.257,126],
+['Akira',1988,'Animation',8.0,0.228,124],
+['Madagascar: Escape 2 Africa',2008,'Animation',6.7,0.272,89],
+['The Blues Brothers',1980,'Crime',7.9,0.23,133],
+['Alien: Resurrection',1997,'Sci-Fi',6.2,0.293,109],
+['Match Point',2005,'Thriller',7.6,0.239,124],
+['Escape Plan',2013,'Thriller',6.7,0.271,115],
+['The Fall Guy',2024,'Comedy',6.8,0.267,126],
+['The Fate of the Furious',2017,'Crime',6.6,0.275,136],
+['The Hitman\'s Bodyguard',2017,'Comedy',6.9,0.263,118],
+['PK',2014,'Comedy',8.1,0.224,153],
+['Lilo & Stitch',2002,'Animation',7.4,0.245,85],
+['Snow White and the Seven Dwarfs',1937,'Animation',7.6,0.238,83],
+['Darkest Hour',2017,'Drama',7.4,0.244,125],
+['The Girl with the Dragon Tattoo',2009,'Crime',7.8,0.231,152],
+['Old School',2003,'Comedy',7.0,0.257,88],
+['Napoleon Dynamite',2004,'Comedy',7.0,0.257,96],
+['Rambo',2008,'Thriller',7.0,0.257,92],
+['Doctor Sleep',2019,'Thriller',7.3,0.246,152],
+['The Polar Express',2004,'Animation',6.6,0.272,100],
+['Who Framed Roger Rabbit',1988,'Animation',7.7,0.233,104],
+['The Croods',2013,'Animation',7.1,0.252,98],
+['Cape Fear',1991,'Crime',7.3,0.245,128],
+['Wicked',2024,'Drama',7.3,0.245,160],
+['Close Encounters of the Third Kind',1977,'Sci-Fi',7.6,0.235,138],
+['Puss in Boots: The Last Wish',2022,'Animation',7.9,0.226,102],
+['CODA',2021,'Comedy',8.0,0.223,111],
+['Closer',2004,'Drama',7.1,0.251,104],
+['The Gray Man',2022,'Thriller',6.5,0.274,122],
+['The Beach',2000,'Drama',6.6,0.269,119],
+['Mother!',2017,'Thriller',6.6,0.269,121],
+['Thank You for Smoking',2005,'Comedy',7.5,0.236,92],
+['The Girl Next Door',2004,'Comedy',6.7,0.264,109],
+['Upgrade',2018,'Sci-Fi',7.5,0.235,100],
+['Austin Powers: The Spy Who Shagged Me',1999,'Comedy',6.7,0.263,95],
+['Ghostbusters',2016,'Comedy',6.8,0.259,117],
+['Everest',2015,'Drama',7.1,0.248,121],
+['Dogma',1999,'Comedy',7.3,0.241,130],
+['Body of Lies',2008,'Thriller',7.0,0.251,128]
+];
+
+// Genre merge map: 10 → 7 (within Absolute Judgment Limit, Lecture 2)
+const GENRE_MERGE = {
+  Romance:   "Drama",      // Drama absorbs Romance
+  Adventure: "Action",     // Action absorbs Adventure
+  Horror:    "Thriller",   // Thriller absorbs Horror
+};
+
+// Parse data — remap merged genres
+const movies = RAW.map(([title,year,genre,rating,votes,runtime]) => {
+  const g = GENRE_MERGE[genre] || genre;
+  return { title, year, genre: g, rating, votes, runtime,
+           decade: Math.floor(year/10)*10 };
+});
+
+// Genre config — 7 categories (≤7 per perceptual limit)
+const GENRES = ["Drama","Crime","Sci-Fi","Action","Comedy","Thriller","Animation"];
+const GENRE_COLORS = {
+  Drama:     "#4285f4",   // blue
+  Crime:     "#ea4335",   // red
+  "Sci-Fi":  "#34a853",   // green
+  Action:    "#fbbc04",   // gold
+  Comedy:    "#a855f7",   // purple
+  Thriller:  "#f97316",   // orange
+  Animation: "#ec4899",   // pink
+};
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let activeGenres = new Set(GENRES);  // all on by default
+let selectedDecade = null;            // null = all time
+let brushedMovies = null;             // null = all
+
+// ═══════════════════════════════════════════
+// GENRE FILTER CHIPS
+// ═══════════════════════════════════════════
+const filterDiv = document.getElementById("genreFilter");
+const legendDiv = document.getElementById("sharedLegend");
+
+GENRES.forEach(g => {
+  // chip
+  const chip = document.createElement("div");
+  chip.className = "genre-chip on";
+  chip.textContent = g;
+  chip.style.borderColor = GENRE_COLORS[g];
+  chip.style.color = GENRE_COLORS[g];
+  chip.style.background = GENRE_COLORS[g] + "20";
+  chip.dataset.genre = g;
+  chip.addEventListener("click", () => {
+    if (activeGenres.has(g)) { activeGenres.delete(g); chip.className = "genre-chip off"; }
+    else { activeGenres.add(g); chip.className = "genre-chip on"; }
+    chip.style.background = activeGenres.has(g) ? GENRE_COLORS[g]+"20" : "transparent";
+    onFilterChange();
+  });
+  filterDiv.insertBefore(chip, document.getElementById("clearGenres"));
+
+  // legend
+  const li = document.createElement("div");
+  li.className = "legend-item";
+  li.innerHTML = `<div class="legend-dot" style="background:${GENRE_COLORS[g]}"></div>${g}`;
+  legendDiv.appendChild(li);
+});
+
+document.getElementById("clearGenres").addEventListener("click", () => {
+  activeGenres = new Set(GENRES);
+  document.querySelectorAll(".genre-chip").forEach(c => {
+    c.className = "genre-chip on";
+    c.style.background = GENRE_COLORS[c.dataset.genre] + "20";
+  });
+  onFilterChange();
+});
+
+function onFilterChange() {
+  updateTimeline();
+  updateTopBar();
+  updateScatter();
+  updateGenreChart();
+}
+
+// ═══════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".dashboard").forEach(d => d.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("dash-" + btn.dataset.tab).classList.add("active");
+    if (btn.dataset.tab === "explorer") {
+      setTimeout(() => { updateScatter(); updateGenreChart(); }, 50);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════
+// TOOLTIP
+// ═══════════════════════════════════════════
+const tooltip = document.getElementById("tooltip");
+function showTooltip(e, d) {
+  const stars = "★".repeat(Math.round(d.rating/2)) + "☆".repeat(5-Math.round(d.rating/2));
+  tooltip.innerHTML = `
+    <div class="tt-title">${d.title}</div>
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+      <span class="tt-rating">${d.rating.toFixed(1)}</span>
+      <span class="tt-stars">${stars}</span>
+    </div>
+    <div class="tt-row">Year: <span>${d.year}</span></div>
+    <div class="tt-row">Genre: <span style="color:${GENRE_COLORS[d.genre]}">${d.genre}</span></div>
+    <div class="tt-row">Runtime: <span>${d.runtime} min</span></div>
+    <div class="tt-row">Votes: <span>${(d.votes).toFixed(2)}M</span></div>`;
+  tooltip.style.opacity = "1";
+  moveTooltip(e);
+}
+function moveTooltip(e) {
+  const x = e.clientX + 14, y = e.clientY - 14;
+  tooltip.style.left = (x + 280 > window.innerWidth ? x - 300 : x) + "px";
+  tooltip.style.top = (y + 200 > window.innerHeight ? y - 220 : y) + "px";
+}
+function hideTooltip() { tooltip.style.opacity = "0"; }
+
+// ═══════════════════════════════════════════
+// DASHBOARD 1 — TIMELINE (two aligned charts)
+// ═══════════════════════════════════════════
+const TL_W = 560, TL_M = { top: 15, right: 20, bottom: 40, left: 50 };
+const TL_H_COUNT = 150, TL_H_RATING = 130;
+
+// Chart 1: count bars
+const tlCountSvg = d3.select("#timeline-count-svg")
+  .attr("width","100%").attr("viewBox",`0 0 ${TL_W} ${TL_H_COUNT + TL_M.top + 10}`);
+const tlCountG = tlCountSvg.append("g").attr("transform",`translate(${TL_M.left},${TL_M.top})`);
+const tlW = TL_W - TL_M.left - TL_M.right;
+
+// Chart 2: rating line
+const tlRatingSvg = d3.select("#timeline-rating-svg")
+  .attr("width","100%").attr("viewBox",`0 0 ${TL_W} ${TL_H_RATING + TL_M.top + TL_M.bottom}`);
+const tlRatingG = tlRatingSvg.append("g").attr("transform",`translate(${TL_M.left},${TL_M.top})`);
+
+// Axis groups
+const tlXAxisCount = tlCountG.append("g").attr("class","axis").attr("transform",`translate(0,${TL_H_COUNT})`);
+const tlXAxisRating = tlRatingG.append("g").attr("class","axis").attr("transform",`translate(0,${TL_H_RATING})`);
+const tlYAxisCount = tlCountG.append("g").attr("class","axis");
+const tlYAxisRating = tlRatingG.append("g").attr("class","axis");
+const tlBars = tlCountG.append("g");
+const tlLineG = tlRatingG.append("g");
+const tlDots = tlRatingG.append("g");
+
+// Axis labels
+tlCountG.append("text").attr("class","axis-label")
+  .attr("transform",`translate(-38,${TL_H_COUNT/2}) rotate(-90)`)
+  .attr("text-anchor","middle").text("# Films");
+tlRatingG.append("text").attr("class","axis-label")
+  .attr("transform",`translate(${tlW/2},${TL_H_RATING+32})`)
+  .attr("text-anchor","middle").text("Decade");
+tlRatingG.append("text").attr("class","axis-label")
+  .attr("transform",`translate(-38,${TL_H_RATING/2}) rotate(-90)`)
+  .attr("text-anchor","middle").text("Avg Rating");
+
+function updateTimeline() {
+  const filtered = movies.filter(m => activeGenres.has(m.genre));
+  const byDecade = d3.rollup(filtered,
+    v => ({ count: v.length, avg: d3.mean(v, d => d.rating) }),
+    d => d.decade
+  );
+  const decades = Array.from(byDecade.keys()).sort(d3.ascending);
+  const data = decades.map(d => ({ decade: d, ...byDecade.get(d) }));
+
+  const xScale = d3.scaleBand().domain(decades).range([0, tlW]).padding(0.3);
+  const yCount = d3.scaleLinear().domain([0, d3.max(data, d=>d.count)*1.15]).range([TL_H_COUNT, 0]);
+  const yRating = d3.scaleLinear().domain([6.0, 9.5]).range([TL_H_RATING, 0]);
+
+  // ── Count chart axes ──
+  tlXAxisCount.call(d3.axisBottom(xScale).tickFormat(d => `${d}s`));
+  tlYAxisCount.call(d3.axisLeft(yCount).ticks(4));
+
+  // Count grid lines
+  tlCountG.selectAll(".grid-line").remove();
+  yCount.ticks(4).forEach(v => {
+    tlCountG.append("line").attr("class","grid-line")
+      .attr("x1",0).attr("x2",tlW)
+      .attr("y1",yCount(v)).attr("y2",yCount(v));
+  });
+
+  // Bars (movie count)
+  const bars = tlBars.selectAll("rect").data(data, d=>d.decade);
+  bars.enter().append("rect")
+    .merge(bars)
+    .attr("x", d => xScale(d.decade))
+    .attr("width", xScale.bandwidth())
+    .attr("y", d => yCount(d.count))
+    .attr("height", d => TL_H_COUNT - yCount(d.count))
+    .attr("fill", d => d.decade===selectedDecade ? "#f5c518" : "#f5c51840")
+    .attr("rx", 3)
+    .style("cursor","pointer")
+    .on("click", (event, d) => {
+      selectedDecade = selectedDecade === d.decade ? null : d.decade;
+      document.getElementById("decadeLabel").textContent =
+        selectedDecade ? `${selectedDecade}s` : "All Time";
+      document.getElementById("decadeHint").textContent =
+        selectedDecade ? `Showing films from the ${selectedDecade}s` : "Click a decade to filter";
+      updateTimeline(); updateTopBar();
+    })
+    .on("mouseover", (e, d) => showTooltip(e, {
+      title:`${d.decade}s`, year:d.decade, genre:"", rating:d.avg,
+      runtime:0, votes:0
+    }))
+    .on("mousemove", moveTooltip)
+    .on("mouseout", hideTooltip);
+  bars.exit().remove();
+
+  // ── Rating chart axes ──
+  tlXAxisRating.call(d3.axisBottom(xScale).tickFormat(d => `${d}s`));
+  tlYAxisRating.call(d3.axisLeft(yRating).ticks(5));
+
+  // Rating grid lines
+  tlRatingG.selectAll(".grid-line").remove();
+  yRating.ticks(5).forEach(v => {
+    tlRatingG.append("line").attr("class","grid-line")
+      .attr("x1",0).attr("x2",tlW)
+      .attr("y1",yRating(v)).attr("y2",yRating(v));
+  });
+
+  // Rating line
+  const line = d3.line().x(d => xScale(d.decade)+xScale.bandwidth()/2).y(d => yRating(d.avg)).curve(d3.curveMonotoneX);
+  tlLineG.selectAll("path").remove();
+  tlLineG.append("path")
+    .datum(data)
+    .attr("fill","none").attr("stroke","#f5c518").attr("stroke-width",2.5)
+    .attr("d", line);
+
+  // Rating dots
+  const dots = tlDots.selectAll("circle").data(data, d=>d.decade);
+  dots.enter().append("circle")
+    .merge(dots)
+    .attr("cx", d => xScale(d.decade)+xScale.bandwidth()/2)
+    .attr("cy", d => yRating(d.avg))
+    .attr("r", 5)
+    .attr("fill","#f5c518").attr("stroke","#0d1117").attr("stroke-width",2)
+    .on("mouseover", (e, d) => showTooltip(e, {
+      title:`Avg ${d.decade}s`, year:d.decade, genre:"", rating:d.avg,
+      runtime:0, votes:0
+    }))
+    .on("mousemove", moveTooltip)
+    .on("mouseout", hideTooltip);
+  dots.exit().remove();
+
+  // Avg rating labels
+  tlRatingG.selectAll(".rating-lbl").remove();
+  data.forEach(d => {
+    tlRatingG.append("text").attr("class","rating-lbl")
+      .attr("x", xScale(d.decade)+xScale.bandwidth()/2)
+      .attr("y", yRating(d.avg)-8)
+      .attr("text-anchor","middle")
+      .attr("fill","#f5c518").attr("font-size","9px")
+      .text(d.avg.toFixed(1));
+  });
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD 1 — TOP MOVIES BAR CHART
+// ═══════════════════════════════════════════
+const TB_W = 560, TB_H = 340;
+const TB_M = { top: 10, right: 60, bottom: 30, left: 220 };
+const tbSvg = d3.select("#topbar-svg")
+  .attr("width","100%").attr("viewBox",`0 0 ${TB_W} ${TB_H}`);
+const tbG = tbSvg.append("g").attr("transform",`translate(${TB_M.left},${TB_M.top})`);
+const tbW = TB_W - TB_M.left - TB_M.right;
+const tbH = TB_H - TB_M.top - TB_M.bottom;
+
+function updateTopBar() {
+  let data = movies.filter(m => activeGenres.has(m.genre));
+  if (selectedDecade) data = data.filter(m => m.decade === selectedDecade);
+  data = data.sort((a,b) => b.rating-a.rating).slice(0,15);
+
+  const xScale = d3.scaleLinear().domain([5.8, 9.5]).range([0, tbW]);
+  const yScale = d3.scaleBand().domain(data.map(d=>d.title)).range([0, tbH]).padding(0.2);
+
+  tbG.selectAll("*").remove();
+
+  // X axis
+  tbG.append("g").attr("class","axis").attr("transform",`translate(0,${tbH})`)
+    .call(d3.axisBottom(xScale).ticks(5));
+
+  // Grid lines
+  xScale.ticks(5).forEach(v => {
+    tbG.append("line").attr("class","grid-line")
+      .attr("x1",xScale(v)).attr("x2",xScale(v)).attr("y1",0).attr("y2",tbH);
+  });
+
+  // Baseline
+  tbG.append("line").attr("x1",0).attr("x2",0).attr("y1",0).attr("y2",tbH)
+    .attr("stroke","var(--border)").attr("stroke-width",1);
+
+  // Bars
+  tbG.selectAll("rect").data(data).enter().append("rect")
+    .attr("x", 0)
+    .attr("y", d => yScale(d.title))
+    .attr("width", d => Math.max(0, xScale(d.rating) - xScale(6.5)))
+    .attr("height", yScale.bandwidth())
+    .attr("fill", d => GENRE_COLORS[d.genre])
+    .attr("rx", 2)
+    .attr("opacity", 0.85)
+    .on("mouseover", (e,d) => showTooltip(e,d))
+    .on("mousemove", moveTooltip)
+    .on("mouseout", hideTooltip);
+
+  // Rating labels
+  tbG.selectAll(".bar-label").data(data).enter().append("text")
+    .attr("class","bar-label")
+    .attr("x", d => Math.max(0, xScale(d.rating) - xScale(6.5)) + 5)
+    .attr("y", d => yScale(d.title) + yScale.bandwidth()/2)
+    .attr("dominant-baseline","middle")
+    .attr("fill","var(--text)").attr("font-size","11px").attr("font-weight","700")
+    .text(d => d.rating.toFixed(1));
+
+  // Year labels (right of rating)
+  tbG.selectAll(".year-label").data(data).enter().append("text")
+    .attr("class","year-label")
+    .attr("x", tbW + 5)
+    .attr("y", d => yScale(d.title) + yScale.bandwidth()/2)
+    .attr("dominant-baseline","middle")
+    .attr("fill","var(--muted)").attr("font-size","10px")
+    .text(d => d.year);
+
+  // Y axis (titles)
+  tbG.append("g").attr("class","axis")
+    .call(d3.axisLeft(yScale).tickSize(0))
+    .selectAll("text")
+    .attr("x", -8).attr("text-anchor","end")
+    .attr("fill","var(--text)").attr("font-size","11px")
+    .text(d => d.length > 28 ? d.slice(0,26)+"…" : d);
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD 2 — SCATTER PLOT
+// ═══════════════════════════════════════════
+const SC_W = 680, SC_H = 460;
+const SC_M = { top: 20, right: 20, bottom: 55, left: 70 };
+const scSvg = d3.select("#scatter-svg")
+  .attr("width","100%").attr("viewBox",`0 0 ${SC_W} ${SC_H}`);
+const scG = scSvg.append("g").attr("transform",`translate(${SC_M.left},${SC_M.top})`);
+const scW = SC_W - SC_M.left - SC_M.right;
+const scH = SC_H - SC_M.top - SC_M.bottom;
+
+// Scales (fixed)
+const xRating = d3.scaleLinear().domain([5.8, 9.5]).range([0, scW]);
+const yVotes  = d3.scaleLog().domain([0.19, 3.5]).range([scH, 0]);
+const rRuntime = d3.scaleSqrt().domain([60, 300]).range([3, 14]);
+
+// Axes
+const scXAxis = scG.append("g").attr("class","axis").attr("transform",`translate(0,${scH})`);
+const scYAxis = scG.append("g").attr("class","axis");
+
+// Grid
+const scGridX = scG.append("g");
+const scGridY = scG.append("g");
+
+// Axis labels
+scG.append("text").attr("class","axis-label")
+  .attr("transform",`translate(${scW/2},${scH+45})`).attr("text-anchor","middle")
+  .text("IMDb Rating");
+scG.append("text").attr("class","axis-label")
+  .attr("transform",`translate(-55,${scH/2}) rotate(-90)`).attr("text-anchor","middle")
+  .text("Votes (millions, log scale)");
+
+// Clips
+scSvg.append("defs").append("clipPath").attr("id","scatter-clip")
+  .append("rect").attr("width",scW).attr("height",scH);
+
+const scBubbles = scG.append("g").attr("clip-path","url(#scatter-clip)");
+
+// Brush
+const brush = d3.brush()
+  .extent([[0,0],[scW,scH]])
+  .on("start brush end", brushed);
+
+const brushG = scG.append("g").attr("class","brush").call(brush);
+
+// Style the brush selection
+brushG.select(".selection")
+  .attr("fill","#f5c51820").attr("stroke","#f5c518").attr("stroke-width",1.5);
+
+// ── HOVER via mousemove on the brush overlay ──
+// The brush overlay captures all pointer events, so we listen there
+// and find the nearest bubble manually using distance.
+brushG.on("mousemove", function(event) {
+  const [mx, my] = d3.pointer(event);
+  const data = movies.filter(m => activeGenres.has(m.genre));
+  let closest = null, closestDist = Infinity;
+  data.forEach(d => {
+    const cx = xRating(d.rating), cy = yVotes(d.votes);
+    const r  = rRuntime(d.runtime);
+    const dist = Math.hypot(cx - mx, cy - my);
+    if (dist < r + 4 && dist < closestDist) { closestDist = dist; closest = d; }
+  });
+  if (closest) { showTooltip(event, closest); showDetail(closest); }
+  else hideTooltip();
+}).on("mouseleave", hideTooltip);
+
+function brushed(event) {
+  const sel = event.selection;
+  if (!sel) {
+    brushedMovies = null;
+    scBubbles.selectAll("circle").attr("opacity", 0.8);
+  } else {
+    const [[x0,y0],[x1,y1]] = sel;
+    brushedMovies = movies.filter(m => {
+      if (!activeGenres.has(m.genre)) return false;
+      const cx = xRating(m.rating), cy = yVotes(m.votes);
+      return cx>=x0 && cx<=x1 && cy>=y0 && cy<=y1;
+    });
+    scBubbles.selectAll("circle")
+      .attr("opacity", d => brushedMovies.includes(d) ? 0.9 : 0.12);
+  }
+  updateGenreChart();
+  const cnt = brushedMovies ? brushedMovies.length : movies.filter(m=>activeGenres.has(m.genre)).length;
+  document.getElementById("selCount").textContent = `— ${cnt} films`;
+}
+
+function updateScatter() {
+  const data = movies.filter(m => activeGenres.has(m.genre));
+
+  // Equal log-spacing: each tick = previous × 2 → equal visual gaps on log scale
+  const yTicks = [0.25, 0.5, 1.0, 2.0];
+
+  scXAxis.call(d3.axisBottom(xRating).ticks(6));
+  scYAxis.call(
+    d3.axisLeft(yVotes)
+      .tickValues(yTicks)
+      .tickFormat(d => d >= 1 ? `${d}M` : `${d}M`)
+  );
+
+  // Grid
+  scGridX.selectAll("*").remove();
+  xRating.ticks(6).forEach(v => {
+    scGridX.append("line").attr("class","grid-line")
+      .attr("x1",xRating(v)).attr("x2",xRating(v)).attr("y1",0).attr("y2",scH);
+  });
+  scGridY.selectAll("*").remove();
+  yTicks.forEach(v => {
+    scGridY.append("line").attr("class","grid-line")
+      .attr("x1",0).attr("x2",scW).attr("y1",yVotes(v)).attr("y2",yVotes(v));
+  });
+
+  // Circles — implement: Scatterplot(xDim, yDim, cDim, rDim, rMin, rMax)
+  const circles = scBubbles.selectAll("circle").data(data, d=>d.title);
+  circles.enter().append("circle")
+    .attr("r", 0)
+    .merge(circles)
+    .attr("cx", d => xRating(d.rating))
+    .attr("cy", d => yVotes(d.votes))
+    .attr("r",  d => rRuntime(d.runtime))
+    .attr("fill", d => GENRE_COLORS[d.genre])
+    .attr("stroke", "#0d1117").attr("stroke-width", 1)
+    .attr("opacity", 0.8)
+    .style("cursor","pointer")
+    .on("mouseover", (e, d) => { showTooltip(e, d); showDetail(d); })
+    .on("mousemove", moveTooltip)
+    .on("mouseout", hideTooltip)
+    .on("click", (e, d) => showDetail(d));
+  circles.exit().remove();
+
+  const cnt = data.length;
+  document.getElementById("selCount").textContent = `— ${cnt} films`;
+}
+
+// ═══════════════════════════════════════════
+// MOVIE DETAIL PANEL
+// ═══════════════════════════════════════════
+function showDetail(d) {
+  const col = GENRE_COLORS[d.genre];
+  const votePct = Math.round((Math.log(d.votes/0.04)/Math.log(3.0/0.04))*100);
+  document.getElementById("movie-detail").innerHTML = `
+    <div class="movie-card">
+      <div class="mc-title">${d.title}</div>
+      <div class="mc-year">${d.year}</div>
+      <div class="mc-rating">${d.rating.toFixed(1)}</div>
+      <div class="mc-rating-label">IMDb Rating / 10</div>
+      <div class="mc-stats">
+        <div class="mc-stat-box">
+          <div class="mc-stat-val">${d.votes.toFixed(2)}M</div>
+          <div class="mc-stat-key">Votes</div>
+        </div>
+        <div class="mc-stat-box">
+          <div class="mc-stat-val">${d.runtime} min</div>
+          <div class="mc-stat-key">Runtime</div>
+        </div>
+      </div>
+      <span class="mc-genre-tag" style="background:${col}25;color:${col};border:1px solid ${col}50">${d.genre}</span>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD 2 — GENRE DISTRIBUTION BAR
+// ═══════════════════════════════════════════
+const GN_W = 300, GN_H = 200;
+const GN_M = { top: 5, right: 50, bottom: 10, left: 85 };
+const gnSvg = d3.select("#genre-svg")
+  .attr("width","100%").attr("viewBox",`0 0 ${GN_W} ${GN_H}`);
+const gnG = gnSvg.append("g").attr("transform",`translate(${GN_M.left},${GN_M.top})`);
+const gnW = GN_W - GN_M.left - GN_M.right;
+const gnH = GN_H - GN_M.top - GN_M.bottom;
+
+function updateGenreChart() {
+  const source = brushedMovies
+    ? brushedMovies
+    : movies.filter(m => activeGenres.has(m.genre));
+
+  const counts = GENRES
+    .filter(g => activeGenres.has(g))
+    .map(g => ({ genre: g, count: source.filter(m => m.genre===g).length }))
+    .filter(d => d.count > 0)
+    .sort((a,b) => b.count - a.count);
+
+  const xScale = d3.scaleLinear().domain([0, d3.max(counts, d=>d.count) || 1]).range([0, gnW]);
+  const yScale = d3.scaleBand().domain(counts.map(d=>d.genre)).range([0,gnH]).padding(0.2);
+
+  gnG.selectAll("*").remove();
+
+  // Y axis
+  gnG.append("g").attr("class","axis").call(d3.axisLeft(yScale).tickSize(0))
+    .selectAll("text").attr("fill","var(--muted)").attr("font-size","10px");
+
+  // Bars
+  gnG.selectAll("rect").data(counts).enter().append("rect")
+    .attr("x", 0)
+    .attr("y", d => yScale(d.genre))
+    .attr("width", d => xScale(d.count))
+    .attr("height", yScale.bandwidth())
+    .attr("fill", d => GENRE_COLORS[d.genre])
+    .attr("rx", 2).attr("opacity", 0.85);
+
+  // Count labels
+  gnG.selectAll(".cnt-lbl").data(counts).enter().append("text")
+    .attr("class","cnt-lbl")
+    .attr("x", d => xScale(d.count) + 4)
+    .attr("y", d => yScale(d.genre) + yScale.bandwidth()/2)
+    .attr("dominant-baseline","middle")
+    .attr("fill","var(--muted)").attr("font-size","10px")
+    .text(d => d.count);
+}
+
+// INIT
+updateTimeline();
+updateTopBar();
+setTimeout(() => { updateScatter(); updateGenreChart(); }, 100);
+</script>
+</body>
+</html>
